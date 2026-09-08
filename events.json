@@ -1,0 +1,714 @@
+[
+  {
+    "timestamp": "2026-07-22T12:13:47.900219",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:13:50.914949",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 6.53
+  },
+  {
+    "timestamp": "2026-07-22T12:14:53.960031",
+    "ip": "8.8.8.8",
+    "name": "Google DNS",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:14:56.958939",
+    "ip": "8.8.8.8",
+    "name": "Google DNS",
+    "type": "🟢 CONECTADO",
+    "latency": 4.45
+  },
+  {
+    "timestamp": "2026-07-22T12:15:04.016702",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:15:06.996394",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 5.45
+  },
+  {
+    "timestamp": "2026-07-22T12:15:24.702671",
+    "ip": "192.168.14.1",
+    "name": "Girardota",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:15:27.808803",
+    "ip": "192.168.14.1",
+    "name": "Girardota",
+    "type": "🟢 CONECTADO",
+    "latency": 12.06
+  },
+  {
+    "timestamp": "2026-07-22T12:16:05.208580",
+    "ip": "192.168.10.1",
+    "name": "Buenaventura",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:16:08.372835",
+    "ip": "192.168.10.1",
+    "name": "Buenaventura",
+    "type": "🟢 CONECTADO",
+    "latency": 143.83
+  },
+  {
+    "timestamp": "2026-07-22T12:16:20.219799",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:16:23.236888",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 8.36
+  },
+  {
+    "timestamp": "2026-07-22T12:16:50.707452",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:16:53.739302",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 8.04
+  },
+  {
+    "timestamp": "2026-07-22T12:17:11.110727",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:17:14.105879",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 6.0
+  },
+  {
+    "timestamp": "2026-07-22T12:17:42.117549",
+    "ip": "192.168.10.1",
+    "name": "Buenaventura",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:17:45.255297",
+    "ip": "192.168.10.1",
+    "name": "Buenaventura",
+    "type": "🟢 CONECTADO",
+    "latency": 138.33
+  },
+  {
+    "timestamp": "2026-07-22T12:18:17.520702",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:18:20.541467",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 10.05
+  },
+  {
+    "timestamp": "2026-07-22T12:18:32.836323",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:18:35.848122",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 7.01
+  },
+  {
+    "timestamp": "2026-07-22T12:20:39.877820",
+    "ip": "192.168.11.1",
+    "name": "ZFO",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:20:42.945478",
+    "ip": "192.168.11.1",
+    "name": "ZFO",
+    "type": "🟢 CONECTADO",
+    "latency": 7.04
+  },
+  {
+    "timestamp": "2026-07-22T12:21:35.931896",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:21:38.932828",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 10.05
+  },
+  {
+    "timestamp": "2026-07-22T12:22:01.563817",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:22:04.563021",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 7.02
+  },
+  {
+    "timestamp": "2026-07-22T12:22:22.094926",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:22:25.229703",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 7.95
+  },
+  {
+    "timestamp": "2026-07-22T12:24:32.067683",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:24:34.146009",
+    "ip": "192.168.9.1",
+    "name": "Cartagena",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:24:35.070095",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 6.13
+  },
+  {
+    "timestamp": "2026-07-22T12:24:47.107920",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:24:50.080115",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 5.02
+  },
+  {
+    "timestamp": "2026-07-22T12:25:15.314519",
+    "ip": "192.168.9.1",
+    "name": "Cartagena",
+    "type": "🟢 CONECTADO",
+    "latency": 15.29
+  },
+  {
+    "timestamp": "2026-07-22T12:25:22.183719",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:25:25.181784",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 8.53
+  },
+  {
+    "timestamp": "2026-07-22T12:25:42.295690",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:25:45.292145",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 5.87
+  },
+  {
+    "timestamp": "2026-07-22T12:26:12.608989",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:26:15.633602",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 6.52
+  },
+  {
+    "timestamp": "2026-07-22T12:27:13.503203",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:27:16.506693",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 8.51
+  },
+  {
+    "timestamp": "2026-07-22T12:28:15.135751",
+    "ip": "192.168.14.1",
+    "name": "Girardota",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:28:18.107431",
+    "ip": "192.168.14.1",
+    "name": "Girardota",
+    "type": "🟢 CONECTADO",
+    "latency": 12.33
+  },
+  {
+    "timestamp": "2026-07-22T12:28:40.303407",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:28:43.297388",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 6.05
+  },
+  {
+    "timestamp": "2026-07-22T12:29:25.793421",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:29:28.798011",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 6.71
+  },
+  {
+    "timestamp": "2026-07-22T12:29:51.133016",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:29:54.154426",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 7.51
+  },
+  {
+    "timestamp": "2026-07-22T12:30:36.606865",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:30:39.614467",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 12.06
+  },
+  {
+    "timestamp": "2026-07-22T12:31:58.492613",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:32:01.484319",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 7.02
+  },
+  {
+    "timestamp": "2026-07-22T12:32:23.897881",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:32:25.924226",
+    "ip": "192.168.10.1",
+    "name": "Buenaventura",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:32:26.988397",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 8.01
+  },
+  {
+    "timestamp": "2026-07-22T12:32:27.053692",
+    "ip": "192.168.10.1",
+    "name": "Buenaventura",
+    "type": "🟢 CONECTADO",
+    "latency": 53.23
+  },
+  {
+    "timestamp": "2026-07-22T12:35:25.551530",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:35:28.576143",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 7.33
+  },
+  {
+    "timestamp": "2026-07-22T12:35:50.994896",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:35:53.999348",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 7.54
+  },
+  {
+    "timestamp": "2026-07-22T12:36:21.195029",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:36:24.190755",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 5.52
+  },
+  {
+    "timestamp": "2026-07-22T12:36:46.478224",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:36:49.475191",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 5.52
+  },
+  {
+    "timestamp": "2026-07-22T12:45:06.634747",
+    "ip": "8.8.8.8",
+    "name": "Google DNS",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:45:08.685232",
+    "ip": "192.168.18.41",
+    "name": "ZKTeco ZFB",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:45:10.700588",
+    "ip": "192.168.4.181",
+    "name": "ZKTeco CAI",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:45:13.953006",
+    "ip": "192.168.6.1",
+    "name": "Alpasar 3",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:45:14.734483",
+    "ip": "8.8.8.8",
+    "name": "Google DNS",
+    "type": "🟢 CONECTADO",
+    "latency": 4.53
+  },
+  {
+    "timestamp": "2026-07-22T12:45:14.751041",
+    "ip": "192.168.18.41",
+    "name": "ZKTeco ZFB",
+    "type": "🟢 CONECTADO",
+    "latency": 8.06
+  },
+  {
+    "timestamp": "2026-07-22T12:45:14.785753",
+    "ip": "192.168.4.181",
+    "name": "ZKTeco CAI",
+    "type": "🟢 CONECTADO",
+    "latency": 2.0
+  },
+  {
+    "timestamp": "2026-07-22T12:45:14.823994",
+    "ip": "192.168.6.1",
+    "name": "Alpasar 3",
+    "type": "🟢 CONECTADO",
+    "latency": 2.0
+  },
+  {
+    "timestamp": "2026-07-22T12:46:39.912137",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:46:47.933940",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 10.53
+  },
+  {
+    "timestamp": "2026-07-22T12:57:07.750010",
+    "ip": "8.8.8.8",
+    "name": "Google DNS",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:57:09.773022",
+    "ip": "192.168.18.41",
+    "name": "ZKTeco ZFB",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:57:13.943072",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:57:15.276182",
+    "ip": "8.8.8.8",
+    "name": "Google DNS",
+    "type": "🟢 CONECTADO",
+    "latency": 11.05
+  },
+  {
+    "timestamp": "2026-07-22T12:57:15.289416",
+    "ip": "192.168.18.41",
+    "name": "ZKTeco ZFB",
+    "type": "🟢 CONECTADO",
+    "latency": 6.82
+  },
+  {
+    "timestamp": "2026-07-22T12:57:15.319222",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 14.8
+  },
+  {
+    "timestamp": "2026-07-22T12:59:04.343894",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T12:59:07.357131",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 7.75
+  },
+  {
+    "timestamp": "2026-07-22T13:00:29.865409",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T13:00:32.885235",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 5.01
+  },
+  {
+    "timestamp": "2026-07-22T13:01:40.262988",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T13:01:43.280012",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 6.0
+  },
+  {
+    "timestamp": "2026-07-22T13:02:25.340641",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T13:02:28.361061",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 5.99
+  },
+  {
+    "timestamp": "2026-07-22T13:03:00.792355",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T13:03:06.154956",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 4.99
+  },
+  {
+    "timestamp": "2026-07-22T13:03:28.139338",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T13:03:31.149755",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 7.99
+  },
+  {
+    "timestamp": "2026-07-22T13:06:58.127662",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🔴 DESCONECTADO",
+    "latency": null
+  },
+  {
+    "timestamp": "2026-07-22T13:07:01.138779",
+    "ip": "192.168.5.1",
+    "name": "Alpasar 1",
+    "type": "🟢 CONECTADO",
+    "latency": 7.98
+  },
+  {
+    "timestamp": "2026-07-22T13:07:53.713675",
+    "ip": "192.168.18.41",
+    "name": "ZKTeco ZFB",
+    "type": "🟢 CONECTADO",
+    "latency": 8.0
+  },
+  {
+    "timestamp": "2026-07-22T13:08:13.366893",
+    "ip": "192.168.4.181",
+    "name": "ZKTeco CAI",
+    "type": "🟢 CONECTADO",
+    "latency": 1.0
+  },
+  {
+    "timestamp": "2026-07-27T14:16:02.793332",
+    "type": "👤 USUARIO CONECTADO",
+    "name": "LG-0279",
+    "ip": "127.0.0.1"
+  },
+  {
+    "timestamp": "2026-07-27T14:17:11.399906",
+    "type": "👤 USUARIO CONECTADO",
+    "name": "LG-0279",
+    "ip": "127.0.0.1"
+  }
+]
