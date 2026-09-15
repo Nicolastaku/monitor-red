@@ -1,1120 +1,1032 @@
-from flask import Flask, render_template, jsonify, request, send_file
+# app.py
+from flask import Flask, render_template, jsonify, request, send_file, session, redirect, url_for
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 from ping3 import ping
+from functools import wraps
+from datetime import datetime, timedelta
 import json
 import os
-from datetime import datetime, timedelta
-import csv
-import io
 import socket
-import uuid
+import sqlite3
 import threading
 import time
-import base64
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter, landscape
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment
-from openpyxl.chart import LineChart, Reference
 import logging
 import requests
 import re
-import subprocess
-import platform
+import io
+import csv
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+
+# ============================================================
+# CONFIGURACIÓN
+# ============================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, 'monitor.db')
+
+SECRET_KEY = os.getenv('MONITOR_SECRET_KEY', 'cambia-esto-en-produccion')
+ADMIN_PASSWORD = os.getenv('MONITOR_ADMIN_PASSWORD', 'admin')
+
+# FIX #6: validar PING_INTERVAL >= 1
+PING_INTERVAL = max(1, int(os.getenv('MONITOR_PING_INTERVAL', '10')))
+HISTORY_INTERVAL = max(1, int(os.getenv('MONITOR_HISTORY_INTERVAL', '30')))
+HISTORY_RETENTION_DAYS = int(os.getenv('MONITOR_HISTORY_DAYS', '30'))
+EVENTS_RETENTION_DAYS = int(os.getenv('MONITOR_EVENTS_DAYS', '30'))       # FIX #1
+AUDIT_RETENTION_DAYS = int(os.getenv('MONITOR_AUDIT_DAYS', '60'))         # FIX #1
+PROVIDER_CACHE_TTL = 60 * 60 * 24 * 7
+CLEANUP_INTERVAL = 3600
+IP_REGEX = re.compile(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$')    # FIX #16
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(DATA_DIR, 'monitor.log')),
+        logging.StreamHandler()
+    ]
+)
+log = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'tu_clave_secreta_aqui'
-CORS(app)
+app.config['SECRET_KEY'] = SECRET_KEY
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+CORS(app, supports_credentials=True)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-# ===== CONFIGURACIÓN =====
-SHARED_FOLDER = r'C:\Users\Public\MonitorRed'
-os.makedirs(SHARED_FOLDER, exist_ok=True)
-os.makedirs(os.path.join(SHARED_FOLDER, 'exports'), exist_ok=True)
-os.makedirs(os.path.join(SHARED_FOLDER, 'logs'), exist_ok=True)
+# ============================================================
+# BASE DE DATOS
+# ============================================================
+def get_db():
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA foreign_keys=ON')
+    return conn
 
-DATA_FILE = os.path.join(SHARED_FOLDER, 'devices.json')
-EVENTS_FILE = os.path.join(SHARED_FOLDER, 'events.json')
-USERS_FILE = os.path.join(SHARED_FOLDER, 'users.json')
-AUDIT_FILE = os.path.join(SHARED_FOLDER, 'audit.log')
-INCIDENTS_FILE = os.path.join(SHARED_FOLDER, 'incidents.json')
-GROUPS_FILE = os.path.join(SHARED_FOLDER, 'groups.json')
+def column_exists(conn, table, column):
+    # FIX #21: chequear PRAGMA en vez de try/except
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(r['name'] == column for r in rows)
 
-# ===== MAPA DE PROVEEDORES COMERCIALES =====
+def init_db():
+    with get_db() as conn:
+        conn.executescript('''
+            CREATE TABLE IF NOT EXISTS devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                group_name TEXT DEFAULT 'default',
+                provider TEXT DEFAULT 'Desconocido',
+                provider_updated_at TEXT,
+                comments TEXT DEFAULT '',
+                threshold INTEGER DEFAULT 100,
+                alive INTEGER DEFAULT 0,
+                last_latency REAL,
+                last_check TEXT,
+                maintenance INTEGER DEFAULT 0,
+                hidden INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_ip TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                latency REAL,
+                alive INTEGER NOT NULL,
+                FOREIGN KEY (device_ip) REFERENCES devices(ip) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_history_ip_ts ON history(device_ip, timestamp);
+            CREATE INDEX IF NOT EXISTS idx_history_ts ON history(timestamp);
+
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                device_ip TEXT,
+                device_name TEXT,
+                event_type TEXT NOT NULL,
+                latency REAL,
+                details TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp);
+
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                user_ip TEXT,
+                action TEXT NOT NULL,
+                details TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(timestamp);
+
+            CREATE TABLE IF NOT EXISTS groups (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                color TEXT DEFAULT '#d35400'
+            );
+
+            CREATE TABLE IF NOT EXISTS users (
+                ip TEXT PRIMARY KEY,
+                username TEXT,
+                first_seen TEXT,
+                last_seen TEXT,
+                active INTEGER DEFAULT 1
+            );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+        ''')
+        if not column_exists(conn, 'devices', 'hidden'):
+            conn.execute("ALTER TABLE devices ADD COLUMN hidden INTEGER DEFAULT 0")
+        conn.execute("INSERT OR IGNORE INTO groups (id, name, color) VALUES ('default', 'Por defecto', '#d35400')")
+    log.info("Base de datos inicializada en %s", DB_PATH)
+
+# ============================================================
+# HELPERS
+# ============================================================
+def now_iso():
+    return datetime.now().isoformat()
+
+def valid_ip(ip):
+    # FIX #16: validar formato IPv4
+    m = IP_REGEX.match(ip or '')
+    if not m:
+        return False
+    return all(0 <= int(g) <= 255 for g in m.groups())
+
+def log_audit(action, user_ip, details=""):
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO audit_log (timestamp, user_ip, action, details) VALUES (?, ?, ?, ?)",
+                (now_iso(), user_ip, action, details)
+            )
+    except Exception as e:
+        log.error("Error en audit: %s", e)
+
+def save_event(event_type, device_ip=None, device_name=None, latency=None, details=None):
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO events (timestamp, device_ip, device_name, event_type, latency, details) VALUES (?, ?, ?, ?, ?, ?)",
+                (now_iso(), device_ip, device_name, event_type, latency, details)
+            )
+    except Exception as e:
+        log.error("Error guardando evento: %s", e)
+
+def get_setting(key, default=None):
+    with get_db() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row['value'] if row else default
+
+def set_setting(key, value):
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
+
+# ============================================================
+# PING Y PROVEEDORES
+# ============================================================
+def ping_ip(ip, timeout=2, retries=1):
+    # FIX #15: reintentos
+    for attempt in range(retries + 1):
+        try:
+            r = ping(ip, timeout=timeout)
+            if r is not None:
+                return round(r * 1000, 2)
+            return None
+        except Exception:
+            if attempt < retries:
+                time.sleep(0.1)
+                continue
+            return None
+    return None
+
 PROVIDER_MAP = {
     'claro': 'Claro', 'comcel': 'Claro', 'une': 'UNE', 'epm': 'EPM',
     'etb': 'ETB', 'movistar': 'Movistar', 'telefonica': 'Movistar',
-    'tigo': 'Tigo', 'colombia telecomunicaciones': 'Colombia Telecomunicaciones',
-    'google': 'Google', 'cloudflare': 'Cloudflare', 'amazon': 'Amazon AWS',
-    'microsoft': 'Microsoft Azure', 'akamai': 'Akamai', 'facebook': 'Meta',
-    'apple': 'Apple', 'netflix': 'Netflix', 'verizon': 'Verizon',
-    'at&t': 'AT&T', 'comcast': 'Comcast', 'spectrum': 'Spectrum',
+    'tigo': 'Tigo', 'google': 'Google', 'cloudflare': 'Cloudflare',
+    'amazon': 'Amazon AWS', 'microsoft': 'Microsoft Azure',
+    'akamai': 'Akamai', 'facebook': 'Meta', 'apple': 'Apple',
+    'netflix': 'Netflix', 'verizon': 'Verizon', 'comcast': 'Comcast',
 }
 
-# ===== CONFIGURACIÓN DE TELEGRAM =====
-TELEGRAM_BOT_TOKEN = ''  # Opcional: poner el token del bot
-TELEGRAM_CHAT_ID = ''    # Opcional: poner el chat ID
-
-# ===== FUNCIONES DE AUDITORÍA =====
-def log_audit(action, user_ip, details):
-    timestamp = datetime.now().isoformat()
-    log_entry = f"[{timestamp}] {action} | IP: {user_ip} | {details}\n"
-    try:
-        with open(AUDIT_FILE, 'a', encoding='utf-8') as f:
-            f.write(log_entry)
-    except Exception as e:
-        print(f"Error escribiendo auditoría: {e}")
-
-# ===== FUNCIONES DE INCIDENTES =====
-def load_incidents():
-    try:
-        with open(INCIDENTS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return []
-    except json.JSONDecodeError:
-        return []
-
-def save_incident(incident):
-    incidents = load_incidents()
-    incidents.append(incident)
-    if len(incidents) > 500:
-        incidents = incidents[-500:]
-    with open(INCIDENTS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(incidents, f, indent=2, ensure_ascii=False)
-
-# ===== FUNCIONES DE GRUPOS =====
-def load_groups():
-    try:
-        with open(GROUPS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {'default': {'name': 'Todos', 'ips': [], 'color': '#00d2ff'}}
-    except json.JSONDecodeError:
-        return {'default': {'name': 'Todos', 'ips': [], 'color': '#00d2ff'}}
-
-def save_groups(groups):
-    with open(GROUPS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(groups, f, indent=2, ensure_ascii=False)
-
-# ===== FUNCIONES DE USUARIOS =====
-def load_users():
-    try:
-        with open(USERS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return []
-    except json.JSONDecodeError:
-        return []
-
-def save_users(users):
-    with open(USERS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(users, f, indent=2, ensure_ascii=False)
-
-def add_user(ip_address):
-    users = load_users()
-    existing = next((u for u in users if u['ip'] == ip_address), None)
-    if existing:
-        existing['last_seen'] = datetime.now().isoformat()
-        existing['active'] = True
-    else:
-        try:
-            hostname = socket.gethostbyaddr(ip_address)[0]
-            name = hostname.split('.')[0]
-        except:
-            name = f"Usuario_{ip_address.replace('.', '_')}"
-        
-        users.append({
-            'id': str(uuid.uuid4()),
-            'username': name,
-            'ip': ip_address,
-            'first_seen': datetime.now().isoformat(),
-            'last_seen': datetime.now().isoformat(),
-            'active': True,
-            'color': generate_color(),
-            'messages': []
-        })
-    save_users(users)
-    log_audit('USUARIO_CONECTADO', ip_address, f'Usuario {ip_address} conectado')
-    return users
-
-def remove_user(ip_address):
-    users = load_users()
-    for user in users:
-        if user['ip'] == ip_address:
-            user['active'] = False
-            break
-    save_users(users)
-    log_audit('USUARIO_DESCONECTADO', ip_address, f'Usuario {ip_address} desconectado')
-    return users
-
-def get_active_users():
-    users = load_users()
-    now = datetime.now()
-    for user in users:
-        if user['active']:
-            last_seen = datetime.fromisoformat(user['last_seen'])
-            if (now - last_seen).total_seconds() > 30:
-                user['active'] = False
-    save_users(users)
-    return [u for u in users if u['active']]
-
-def get_user_by_ip(ip):
-    users = load_users()
-    for user in users:
-        if user['ip'] == ip:
-            return user
-    return None
-
-def generate_color():
-    colors_list = ['#00ff88', '#00d2ff', '#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff', '#ff6bff', '#ff9f43']
-    used_colors = [u.get('color', '') for u in load_users()]
-    available = [c for c in colors_list if c not in used_colors]
-    return available[0] if available else '#8899aa'
-
-# ===== FUNCIONES DE DATOS =====
-file_lock = threading.Lock()
-
-def load_devices():
-    with file_lock:
-        try:
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except FileNotFoundError:
-            default_devices = [
-                {'ip': '192.168.1.1', 'name': 'Router', 'history': [], 'provider': 'Red Local', 'comments': '', 'group': 'default'},
-                {'ip': '8.8.8.8', 'name': 'Google DNS', 'history': [], 'provider': 'Google', 'comments': '', 'group': 'default'},
-                {'ip': '1.1.1.1', 'name': 'Cloudflare', 'history': [], 'provider': 'Cloudflare', 'comments': '', 'group': 'default'}
-            ]
-            save_devices(default_devices)
-            return default_devices
-        except json.JSONDecodeError:
-            print("⚠️ Archivo devices.json corrupto. Creando nuevo...")
-            default_devices = []
-            save_devices(default_devices)
-            return default_devices
-
-def save_devices(devices):
-    with file_lock:
-        temp_file = DATA_FILE + '.tmp'
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(devices, f, indent=2, ensure_ascii=False)
-        os.replace(temp_file, DATA_FILE)
-
-def load_events():
-    try:
-        with open(EVENTS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return []
-    except json.JSONDecodeError:
-        return []
-
-def save_event(event):
-    events = load_events()
-    events.append(event)
-    if len(events) > 200:
-        events = events[-200:]
-    with open(EVENTS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(events, f, indent=2, ensure_ascii=False)
-
-def ping_ip(ip, timeout=2):
-    try:
-        result = ping(ip, timeout=timeout)
-        if result is not None:
-            return round(result * 1000, 2)
-        return None
-    except Exception:
-        return None
-
-# ===== FUNCIÓN PARA ESCANEAR RED =====
-def scan_network(network='192.168.1.', start=1, end=254, timeout=0.5):
-    """Escanea un rango de IPs y devuelve las activas"""
-    results = []
-    for i in range(start, end + 1):
-        ip = f"{network}{i}"
-        latency = ping_ip(ip, timeout=timeout)
-        if latency is not None:
-            provider = get_provider(ip)
-            results.append({
-                'ip': ip,
-                'latency': latency,
-                'provider': provider,
-                'name': f'Dispositivo {i}'
-            })
-    return results
-
-# ===== FUNCIÓN PARA OBTENER PROVEEDOR COMERCIAL =====
 def clean_provider_name(provider):
     if not provider:
         return 'Desconocido'
-    
-    provider_lower = provider.lower()
-    
-    for key, value in PROVIDER_MAP.items():
-        if key in provider_lower:
-            return value
-    
-    provider = re.sub(r'^AS\d+\s+', '', provider)
-    
-    if 'LLC' in provider or 'Inc' in provider or 'Ltd' in provider:
-        parts = provider.split()
-        if parts:
-            return parts[0]
-    
-    if '(' in provider:
-        provider = provider.split('(')[0].strip()
-    if ',' in provider:
-        provider = provider.split(',')[0].strip()
-    
-    return provider.strip() if provider else 'Desconocido'
+    p = provider.lower()
+    for key, val in PROVIDER_MAP.items():
+        if key in p:
+            return val
+    p = re.sub(r'^AS\d+\s+', '', provider)
+    if '(' in p:
+        p = p.split('(')[0].strip()
+    if ',' in p:
+        p = p.split(',')[0].strip()
+    return p.strip() or 'Desconocido'
+
+def is_local_ip(ip):
+    return (ip.startswith('192.168.') or ip.startswith('10.') or
+            ip.startswith('172.16.') or ip.startswith('127.') or
+            ip.startswith('172.17.') or ip.startswith('172.18.') or
+            ip.startswith('172.19.') or ip.startswith('172.2') or
+            ip.startswith('172.30.') or ip.startswith('172.31.'))
+
+def fetch_provider_from_api(ip):
+    if is_local_ip(ip):
+        return 'Red Local', False
+    try:
+        r = requests.get(f'http://ip-api.com/json/{ip}?fields=status,isp,org', timeout=3)
+        if r.status_code == 200:
+            data = r.json()
+            if data.get('status') == 'success':
+                return clean_provider_name(data.get('isp') or data.get('org')), True
+    except Exception:
+        pass
+    return 'Desconocido', False
 
 def get_provider(ip):
-    if ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.16.') or ip.startswith('127.'):
-        return 'Red Local'
-    
-    try:
-        response = requests.get(f'http://ip-api.com/json/{ip}?fields=status,isp,org', timeout=3)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('status') == 'success':
-                provider = data.get('isp') or data.get('org')
-                if provider:
-                    return clean_provider_name(provider)
-        
-        response = requests.get(f'https://ipinfo.io/{ip}/org', timeout=3)
-        if response.status_code == 200:
-            provider = response.text.strip()
-            if provider:
-                return clean_provider_name(provider)
-        
-        return 'Desconocido'
-    except Exception as e:
-        print(f"Error obteniendo proveedor para {ip}: {e}")
-        return 'Desconocido'
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT provider, provider_updated_at FROM devices WHERE ip = ?", (ip,)
+        ).fetchone()
+        if row and row['provider'] and row['provider'] != 'Desconocido' and row['provider_updated_at']:
+            try:
+                updated = datetime.fromisoformat(row['provider_updated_at'])
+                if (datetime.now() - updated).total_seconds() < PROVIDER_CACHE_TTL:
+                    return row['provider']
+            except Exception:
+                pass
+    provider, ok = fetch_provider_from_api(ip)
+    # FIX #18: solo actualizar provider_updated_at si la consulta fue exitosa
+    with get_db() as conn:
+        if ok:
+            conn.execute(
+                "UPDATE devices SET provider = ?, provider_updated_at = ? WHERE ip = ?",
+                (provider, now_iso(), ip)
+            )
+        else:
+            conn.execute(
+                "UPDATE devices SET provider = ? WHERE ip = ?",
+                (provider, ip)
+            )
+    return provider
 
-# ===== FUNCIÓN PARA OBTENER WHOIS =====
 def get_whois(ip):
-    """Obtiene información WHOIS de una IP"""
     try:
-        response = requests.get(f'http://ip-api.com/json/{ip}?fields=status,country,regionName,city,isp,org,as', timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('status') == 'success':
+        r = requests.get(
+            f'http://ip-api.com/json/{ip}?fields=status,country,regionName,city,isp,org,as',
+            timeout=5
+        )
+        if r.status_code == 200:
+            d = r.json()
+            if d.get('status') == 'success':
                 return {
-                    'country': data.get('country', 'Desconocido'),
-                    'region': data.get('regionName', 'Desconocido'),
-                    'city': data.get('city', 'Desconocido'),
-                    'isp': data.get('isp', 'Desconocido'),
-                    'org': data.get('org', 'Desconocido'),
-                    'as': data.get('as', 'Desconocido')
+                    'country': d.get('country', 'Desconocido'),
+                    'region': d.get('regionName', 'Desconocido'),
+                    'city': d.get('city', 'Desconocido'),
+                    'isp': d.get('isp', 'Desconocido'),
+                    'org': d.get('org', 'Desconocido'),
+                    'as': d.get('as', 'Desconocido'),
                 }
-        return None
-    except Exception as e:
-        print(f"Error obteniendo WHOIS para {ip}: {e}")
-        return None
+    except Exception:
+        pass
+    return None
 
-# ===== FUNCIÓN PARA ENVIAR A TELEGRAM =====
-def send_telegram_message(message):
-    """Envía un mensaje a Telegram"""
-    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+# ============================================================
+# WORKER DE PINGS
+# ============================================================
+_worker_stop = threading.Event()
+_worker_thread = None
+_last_state = {}
+_last_history_save = {}
+
+def ping_worker():
+    log.info("Ping worker iniciado (ping=%ss, history=%ss)", PING_INTERVAL, HISTORY_INTERVAL)
+    last_cleanup = 0
+    while not _worker_stop.is_set():
         try:
-            url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-            payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'HTML'}
-            requests.post(url, json=payload, timeout=5)
+            with get_db() as conn:
+                devices = conn.execute(
+                    "SELECT ip, name, threshold, maintenance FROM devices"
+                ).fetchall()
+
+            # FIX #3: limpiar entradas de IPs que ya no existen
+            current_ips = {d['ip'] for d in devices}
+            for ip in list(_last_state.keys()):
+                if ip not in current_ips:
+                    del _last_state[ip]
+            for ip in list(_last_history_save.keys()):
+                if ip not in current_ips:
+                    del _last_history_save[ip]
+
+            now = time.time()
+            for dev in devices:
+                ip = dev['ip']
+                latency = ping_ip(ip)
+                alive = latency is not None
+                prev = _last_state.get(ip)
+
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE devices SET alive = ?, last_latency = ?, last_check = ? WHERE ip = ?",
+                        (1 if alive else 0, latency, datetime.now().strftime('%H:%M:%S'), ip)
+                    )
+
+                last_save = _last_history_save.get(ip, 0)
+                if (now - last_save) >= HISTORY_INTERVAL:
+                    with get_db() as conn:
+                        conn.execute(
+                            "INSERT INTO history (device_ip, timestamp, latency, alive) VALUES (?, ?, ?, ?)",
+                            (ip, now_iso(), latency, 1 if alive else 0)
+                        )
+                    _last_history_save[ip] = now
+
+                if prev is not None and prev != alive:
+                    if alive:
+                        save_event('UP', ip, dev['name'], latency, 'Dispositivo recuperado')
+                        log.info("🟢 %s (%s) recuperado", dev['name'], ip)
+                    else:
+                        save_event('DOWN', ip, dev['name'], None, 'Dispositivo caído')
+                        log.info("🔴 %s (%s) caído", dev['name'], ip)
+                    socketio.emit('device_update', {
+                        'ip': ip,
+                        'alive': alive,
+                        'last_latency': latency,
+                        'last_check': datetime.now().strftime('%H:%M:%S'),
+                    })
+
+                if alive and latency and latency > (dev['threshold'] or 100):
+                    if not dev['maintenance']:
+                        save_event('HIGH_LATENCY', ip, dev['name'], latency,
+                                   f'Latencia {latency}ms > {dev["threshold"]}ms')
+
+                _last_state[ip] = alive
+
+            if (now - last_cleanup) >= CLEANUP_INTERVAL:
+                cleanup_old_data()
+                last_cleanup = now
+
         except Exception as e:
-            print(f"Error enviando a Telegram: {e}")
+            log.exception("Error en ping_worker: %s", e)
+        _worker_stop.wait(PING_INTERVAL)
+    log.info("Ping worker detenido")
 
-# ===== FUNCIÓN PARA EXPORTAR REPORTE COMPLETO =====
-def export_full_report(devices):
-    """Genera un reporte completo en PDF con gráficas"""
-    # Similar a export_pdf pero con más datos
-    pass
+def cleanup_old_data():
+    # FIX #1: limpiar history, events y audit_log
+    now = datetime.now()
+    with get_db() as conn:
+        cutoff_h = (now - timedelta(days=HISTORY_RETENTION_DAYS)).isoformat()
+        deleted = conn.execute("DELETE FROM history WHERE timestamp < ?", (cutoff_h,)).rowcount
+        if deleted > 0:
+            log.info("🧹 Limpiados %d registros de history", deleted)
 
-# ===== ACTUALIZAR TODOS LOS DISPOSITIVOS =====
-def update_all_devices():
-    devices = load_devices()
-    events = []
-    incidents = load_incidents()
-    threshold = 100  # Umbral de latencia en ms
-    
-    for device in devices:
-        ip = device['ip']
-        latency = ping_ip(ip)
-        was_alive = device.get('alive', False)
-        is_alive = latency is not None
-        
-        if 'provider' not in device or not device['provider'] or device['provider'] == 'Desconocido':
-            device['provider'] = get_provider(ip)
-        
-        if 'comments' not in device:
-            device['comments'] = ''
-        if 'group' not in device:
-            device['group'] = 'default'
-        if 'threshold' not in device:
-            device['threshold'] = 100
-        
-        if 'history' not in device:
-            device['history'] = []
-        
-        # Mantener historial de 500 registros (aprox 7 días con 5s de intervalo)
-        if len(device['history']) > 500:
-            device['history'] = device['history'][-500:]
-        
-        device['history'].append({
-            'timestamp': datetime.now().isoformat(),
-            'latency': latency,
-            'alive': is_alive
-        })
-        
-        device['last_latency'] = latency
-        device['alive'] = is_alive
-        device['last_check'] = datetime.now().strftime('%H:%M:%S')
-        
-        # Detectar incidentes
-        if was_alive != is_alive:
-            event_type = '🟢 CONECTADO' if is_alive else '🔴 DESCONECTADO'
-            event = {
-                'timestamp': datetime.now().isoformat(),
-                'ip': ip,
-                'name': device.get('name', ip),
-                'type': event_type,
-                'latency': latency
-            }
-            events.append(event)
-            save_event(event)
-            log_audit('CAMBIO_ESTADO', ip, f'{event_type} - {device.get("name", ip)}')
-            
-            # Guardar incidente
-            incident = {
-                'timestamp': datetime.now().isoformat(),
-                'ip': ip,
-                'name': device.get('name', ip),
-                'type': 'DOWN' if not is_alive else 'UP',
-                'latency': latency,
-                'duration': 0  # Se calculará cuando se recupere
-            }
-            save_incident(incident)
-            
-            # Enviar a Telegram
-            if not is_alive:
-                send_telegram_message(f"🔴 <b>IP CAÍDA</b>\nIP: {ip}\nNombre: {device.get('name', ip)}\nHora: {datetime.now().strftime('%H:%M:%S')}")
-            else:
-                send_telegram_message(f"🟢 <b>IP RECUPERADA</b>\nIP: {ip}\nNombre: {device.get('name', ip)}\nHora: {datetime.now().strftime('%H:%M:%S')}")
-        
-        # Detectar latencia alta (umbral)
-        if is_alive and latency and latency > threshold:
-            event = {
-                'timestamp': datetime.now().isoformat(),
-                'ip': ip,
-                'name': device.get('name', ip),
-                'type': '⚠️ LATENCIA ALTA',
-                'latency': latency
-            }
-            events.append(event)
-            save_event(event)
-            log_audit('LATENCIA_ALTA', ip, f'{device.get("name", ip)} - {latency}ms')
-            
-            if latency > threshold * 2:
-                send_telegram_message(f"⚠️ <b>LATENCIA MUY ALTA</b>\nIP: {ip}\nNombre: {device.get('name', ip)}\nLatencia: {latency}ms\nHora: {datetime.now().strftime('%H:%M:%S')}")
-    
-    save_devices(devices)
-    return devices
+        cutoff_e = (now - timedelta(days=EVENTS_RETENTION_DAYS)).isoformat()
+        deleted = conn.execute("DELETE FROM events WHERE timestamp < ?", (cutoff_e,)).rowcount
+        if deleted > 0:
+            log.info("🧹 Limpiados %d registros de events", deleted)
 
-def calculate_uptime(history, days):
-    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-    recent = [h for h in history if h['timestamp'] > cutoff]
-    total = len(recent)
-    online = sum(1 for h in recent if h['alive'])
-    return round((online / total * 100), 1) if total > 0 else 0
+        cutoff_a = (now - timedelta(days=AUDIT_RETENTION_DAYS)).isoformat()
+        deleted = conn.execute("DELETE FROM audit_log WHERE timestamp < ?", (cutoff_a,)).rowcount
+        if deleted > 0:
+            log.info("🧹 Limpiados %d registros de audit_log", deleted)
 
-def get_local_ip():
+# Alias por compatibilidad
+def cleanup_old_history():
+    cleanup_old_data()
+
+def start_worker():
+    global _worker_thread
+    if _worker_thread and _worker_thread.is_alive():
+        return
+    _worker_stop.clear()
+    _worker_thread = threading.Thread(target=ping_worker, daemon=True)
+    _worker_thread.start()
+
+# ============================================================
+# AUTENTICACIÓN
+# ============================================================
+def login_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not ADMIN_PASSWORD:
+            return f(*args, **kwargs)
+        if not session.get('authenticated'):
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'No autorizado'}), 401
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return wrapper
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        if request.form.get('password') == ADMIN_PASSWORD:
+            session['authenticated'] = True
+            return redirect(url_for('index'))
+        error = 'Contraseña incorrecta'
+    return f'''<!DOCTYPE html>
+    <html><head><title>Login - Monitor</title>
+    <style>
+    body {{ font-family: 'Segoe UI', sans-serif; background:#f4f6f8;
+           display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }}
+    .box {{ background:#fff; padding:40px; border-radius:10px; box-shadow:0 4px 20px rgba(0,0,0,0.08); width:320px; }}
+    h1 {{ color:#d35400; font-size:22px; margin-bottom:20px; text-align:center; }}
+    input {{ width:100%; padding:10px 14px; border:1px solid #e0e0e0; border-radius:8px;
+             font-size:14px; box-sizing:border-box; margin-bottom:14px; }}
+    input:focus {{ outline:none; border-color:#d35400; }}
+    button {{ width:100%; padding:11px; background:#d35400; color:#fff; border:none;
+              border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; }}
+    button:hover {{ background:#b84a00; }}
+    .error {{ color:#e74c3c; font-size:13px; margin-bottom:12px; text-align:center; }}
+    </style></head>
+    <body><div class="box">
+    <h1>🌐 Monitor de Red</h1>
+    {f'<div class="error">{error}</div>' if error else ''}
+    <form method="post">
+    <input type="password" name="password" placeholder="Contraseña" autofocus required>
+    <button type="submit">Entrar</button>
+    </form></div></body></html>'''
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+# ============================================================
+# RUTAS
+# ============================================================
+@app.route('/')
+@login_required
+def index():
+    return render_template('index.html')
+
+# FIX #14: endpoint de salud
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    with get_db() as conn:
+        row = conn.execute("SELECT COUNT(*) as n FROM devices").fetchone()
+    return jsonify({
+        'status': 'ok',
+        'devices': row['n'],
+        'time': now_iso(),
+        'uptime_interval': PING_INTERVAL
+    })
+
+# ---------- DEVICES ----------
+@app.route('/api/devices', methods=['GET'])
+@login_required
+def api_get_devices():
+    with get_db() as conn:
+        rows = conn.execute('''
+            SELECT ip, name, group_name, provider, comments, threshold,
+                   alive, last_latency, last_check, maintenance
+            FROM devices ORDER BY name
+        ''').fetchall()
+    devices = []
+    for r in rows:
+        d = dict(r)
+        d['alive'] = bool(d['alive'])
+        d['maintenance'] = bool(d['maintenance'])
+        devices.append(d)
+    return jsonify(devices)
+
+@app.route('/api/devices', methods=['POST'])
+@login_required
+def api_add_device():
+    data = request.get_json() or {}
+    ip = (data.get('ip') or '').strip()
+    name = (data.get('name') or ip).strip()
+    group = data.get('group', 'default')
+    threshold = int(data.get('threshold', 100))
+    if not ip:
+        return jsonify({'error': 'IP requerida'}), 400
+    # FIX #16: validar formato de IP
+    if not valid_ip(ip):
+        return jsonify({'error': 'Formato de IP inválido'}), 400
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except:
-        return "127.0.0.1"
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO devices (ip, name, group_name, threshold) VALUES (?, ?, ?, ?)",
+                (ip, name, group, threshold)
+            )
+        provider = get_provider(ip)
+        log_audit('AGREGAR_IP', request.remote_addr, f'{ip} - {name}')
+        socketio.emit('devices_changed', {})
+        return jsonify({'ip': ip, 'name': name, 'provider': provider}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'IP ya existe'}), 400
 
-# ===== SOCKET.IO EVENTOS =====
+@app.route('/api/devices/<ip>', methods=['DELETE'])
+@login_required
+def api_delete_device(ip):
+    with get_db() as conn:
+        conn.execute("DELETE FROM devices WHERE ip = ?", (ip,))
+    log_audit('ELIMINAR_IP', request.remote_addr, ip)
+    socketio.emit('devices_changed', {})
+    return jsonify({'message': 'Eliminado'})
+
+@app.route('/api/devices/<ip>', methods=['PUT'])
+@login_required
+def api_update_device(ip):
+    data = request.get_json() or {}
+    fields, values = [], []
+    for key, col in [('name', 'name'), ('comments', 'comments'),
+                     ('group', 'group_name'), ('threshold', 'threshold'),
+                     ('maintenance', 'maintenance')]:
+        if key in data:
+            fields.append(f"{col} = ?")
+            values.append(data[key])
+    if not fields:
+        return jsonify({'error': 'Sin campos'}), 400
+    values.append(ip)
+    with get_db() as conn:
+        conn.execute(f"UPDATE devices SET {', '.join(fields)} WHERE ip = ?", values)
+    log_audit('EDITAR_IP', request.remote_addr, ip)
+    socketio.emit('devices_changed', {})
+    return jsonify({'message': 'Actualizado'})
+
+@app.route('/api/ping/<ip>', methods=['GET'])
+@login_required
+def api_ping_single(ip):
+    latency = ping_ip(ip)
+    return jsonify({'ip': ip, 'alive': latency is not None, 'latency': latency})
+
+# ---------- STATS ----------
+@app.route('/api/stats', methods=['GET'])
+@login_required
+def api_stats():
+    with get_db() as conn:
+        row = conn.execute('''
+            SELECT COUNT(*) as total,
+                   SUM(alive) as online,
+                   AVG(CASE WHEN alive=1 THEN last_latency END) as avg_latency,
+                   MIN(CASE WHEN alive=1 THEN last_latency END) as min_latency,
+                   MAX(CASE WHEN alive=1 THEN last_latency END) as max_latency
+            FROM devices
+        ''').fetchone()
+        providers = conn.execute('''
+            SELECT provider, COUNT(*) as total,
+                   SUM(alive) as online,
+                   AVG(CASE WHEN alive=1 THEN last_latency END) as avg
+            FROM devices GROUP BY provider
+        ''').fetchall()
+    total = row['total'] or 0
+    online = row['online'] or 0
+    provider_stats = {}
+    for p in providers:
+        provider_stats[p['provider'] or 'Desconocido'] = {
+            'total': p['total'],
+            'online': p['online'] or 0,
+            'avg': round(p['avg'], 1) if p['avg'] else 0,
+        }
+    return jsonify({
+        'total': total,
+        'online': online,
+        'offline': total - online,
+        'avg_latency': round(row['avg_latency'], 2) if row['avg_latency'] else 0,
+        'min_latency': row['min_latency'] or 0,
+        'max_latency': row['max_latency'] or 0,
+        'uptime': round((online / total * 100), 1) if total else 0,
+        'providers': provider_stats,
+    })
+
+@app.route('/api/uptime/<ip>', methods=['GET'])
+@login_required
+def api_uptime(ip):
+    with get_db() as conn:
+        result = {}
+        for name, days in [('1d', 1), ('7d', 7), ('30d', 30)]:
+            cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+            row = conn.execute('''
+                SELECT COUNT(*) as total, SUM(alive) as online
+                FROM history WHERE device_ip = ? AND timestamp >= ?
+            ''', (ip, cutoff)).fetchone()
+            total = row['total'] or 0
+            online = row['online'] or 0
+            result[name] = round(online / total * 100, 1) if total else 0
+    return jsonify(result)
+
+@app.route('/api/ranking', methods=['GET'])
+@login_required
+def api_ranking():
+    # FIX #4: LEFT JOIN correcto para incluir dispositivos sin historial
+    with get_db() as conn:
+        rows = conn.execute('''
+            SELECT d.ip, d.name, d.provider, d.alive,
+                   AVG(h.latency) as avg_latency,
+                   MIN(h.latency) as min_latency,
+                   MAX(h.latency) as max_latency,
+                   COUNT(h.id) as samples,
+                   SUM(h.alive) as online
+            FROM devices d
+            LEFT JOIN history h ON h.device_ip = d.ip AND h.latency IS NOT NULL
+            GROUP BY d.ip
+            ORDER BY 
+                CASE WHEN AVG(h.latency) IS NULL THEN 1 ELSE 0 END,
+                AVG(h.latency) ASC
+        ''').fetchall()
+    ranking = []
+    for r in rows:
+        ranking.append({
+            'ip': r['ip'], 'name': r['name'], 'provider': r['provider'],
+            'alive': bool(r['alive']),
+            'avg_latency': round(r['avg_latency'], 2) if r['avg_latency'] else None,
+            'min_latency': r['min_latency'] if r['min_latency'] else None,
+            'max_latency': r['max_latency'] if r['max_latency'] else None,
+            'samples': r['samples'] or 0,
+            'uptime_7d': round((r['online'] or 0) / r['samples'] * 100, 1) if r['samples'] else 0,
+        })
+    return jsonify(ranking)
+
+# ---------- HISTORY ----------
+@app.route('/api/history/<ip>', methods=['GET'])
+@login_required
+def api_history(ip):
+    hours = int(request.args.get('hours', 24))
+
+    # FIX #2/#2.2: downsampling adaptativo (máximo 500 puntos)
+    max_points = 500
+    if hours <= 2:
+        bucket_min = 0
+    else:
+        total_minutes = hours * 60
+        bucket_min = max(1, total_minutes // max_points)
+        # redondear a valores "bonitos"
+        for candidate in [1, 2, 5, 10, 15, 30, 60, 120, 240, 1440]:
+            if bucket_min <= candidate:
+                bucket_min = candidate
+                break
+
+    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+
+    with get_db() as conn:
+        if bucket_min == 0:
+            rows = conn.execute('''
+                SELECT timestamp, latency, alive FROM history
+                WHERE device_ip = ? AND timestamp >= ?
+                ORDER BY timestamp ASC
+            ''', (ip, cutoff)).fetchall()
+            data = [{'timestamp': r['timestamp'], 'latency': r['latency'], 'alive': bool(r['alive'])} for r in rows]
+        else:
+            rows = conn.execute('''
+                SELECT 
+                    MIN(timestamp) as timestamp,
+                    AVG(CASE WHEN alive=1 THEN latency END) as latency,
+                    AVG(alive) as alive_ratio
+                FROM history
+                WHERE device_ip = ? AND timestamp >= ?
+                GROUP BY CAST(strftime('%s', timestamp) AS INTEGER) / (? * 60)
+                ORDER BY timestamp ASC
+            ''', (ip, cutoff, bucket_min)).fetchall()
+            data = [{
+                'timestamp': r['timestamp'],
+                'latency': round(r['latency'], 2) if r['latency'] else None,
+                'alive': (r['alive_ratio'] or 0) >= 0.5
+            } for r in rows]
+    return jsonify(data)
+
+# ---------- EVENTS ----------
+@app.route('/api/events', methods=['GET'])
+@login_required
+def api_events():
+    limit = int(request.args.get('limit', 100))
+    with get_db() as conn:
+        rows = conn.execute('''
+            SELECT timestamp, device_ip, device_name, event_type, latency, details
+            FROM events ORDER BY timestamp DESC LIMIT ?
+        ''', (limit,)).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+# ---------- AUDIT ----------
+@app.route('/api/audit', methods=['GET'])
+@login_required
+def api_audit():
+    limit = int(request.args.get('limit', 100))
+    with get_db() as conn:
+        rows = conn.execute('''
+            SELECT timestamp, user_ip, action, details
+            FROM audit_log ORDER BY timestamp DESC LIMIT ?
+        ''', (limit,)).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+# ---------- WHOIS con cache ----------
+@app.route('/api/whois/<ip>', methods=['GET'])
+@login_required
+def api_whois(ip):
+    # FIX #20: cache de whois en settings
+    cache_key = f'whois:{ip}'
+    cached = get_setting(cache_key)
+    if cached:
+        try:
+            data = json.loads(cached)
+            if data.get('_ts'):
+                ts = datetime.fromisoformat(data['_ts'])
+                if (datetime.now() - ts).total_seconds() < 86400:
+                    data.pop('_ts', None)
+                    return jsonify(data)
+        except Exception:
+            pass
+    w = get_whois(ip)
+    if w:
+        w_with_ts = dict(w)
+        w_with_ts['_ts'] = now_iso()
+        set_setting(cache_key, json.dumps(w_with_ts))
+        return jsonify(w)
+    return jsonify({'error': 'No se pudo obtener'}), 404
+
+# ---------- USERS ----------
+@app.route('/api/users', methods=['GET'])
+@login_required
+def api_users():
+    cutoff = (datetime.now() - timedelta(seconds=30)).isoformat()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT ip, username, first_seen, last_seen FROM users WHERE last_seen >= ?",
+            (cutoff,)
+        ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+# ---------- EXPORT ----------
+@app.route('/api/export/excel', methods=['GET'])
+@login_required
+def api_export_excel():
+    with get_db() as conn:
+        devices = conn.execute('''
+            SELECT ip, name, group_name, provider, comments,
+                   alive, last_latency, last_check, threshold
+            FROM devices ORDER BY name
+        ''').fetchall()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Dispositivos"
+    headers = ['IP', 'Nombre', 'Grupo', 'Proveedor', 'Estado',
+               'Latencia (ms)', 'Última prueba', 'Umbral', 'Comentarios']
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=col, value=h)
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill(start_color="d35400", end_color="d35400", fill_type="solid")
+        c.alignment = Alignment(horizontal="center")
+    for row, d in enumerate(devices, 2):
+        ws.cell(row=row, column=1, value=d['ip'])
+        ws.cell(row=row, column=2, value=d['name'])
+        ws.cell(row=row, column=3, value=d['group_name'])
+        ws.cell(row=row, column=4, value=d['provider'])
+        ws.cell(row=row, column=5, value='En línea' if d['alive'] else 'Caído')
+        ws.cell(row=row, column=6, value=d['last_latency'])
+        ws.cell(row=row, column=7, value=d['last_check'])
+        ws.cell(row=row, column=8, value=d['threshold'])
+        ws.cell(row=row, column=9, value=d['comments'])
+    for col in range(1, 10):
+        ws.column_dimensions[chr(64 + col)].width = 18
+
+    ws_ev = wb.create_sheet("Eventos")
+    ws_ev.append(['Timestamp', 'IP', 'Nombre', 'Tipo', 'Latencia', 'Detalles'])
+    with get_db() as conn:
+        events = conn.execute(
+            "SELECT * FROM events ORDER BY timestamp DESC LIMIT 1000"
+        ).fetchall()
+    for e in events:
+        ws_ev.append([e['timestamp'], e['device_ip'], e['device_name'],
+                      e['event_type'], e['latency'], e['details']])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"monitor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    log_audit('EXPORTAR_EXCEL', request.remote_addr, filename)
+    return send_file(buf, as_attachment=True, download_name=filename,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+@app.route('/api/export/csv', methods=['GET'])
+@login_required
+def api_export_csv():
+    with get_db() as conn:
+        devices = conn.execute("SELECT * FROM devices ORDER BY name").fetchall()
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(['IP', 'Nombre', 'Grupo', 'Proveedor', 'Estado',
+                     'Latencia', 'Última prueba', 'Comentarios'])
+    for d in devices:
+        writer.writerow([d['ip'], d['name'], d['group_name'], d['provider'],
+                         'En línea' if d['alive'] else 'Caído',
+                         d['last_latency'], d['last_check'], d['comments']])
+    mem = io.BytesIO(buf.getvalue().encode('utf-8-sig'))
+    filename = f"monitor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    return send_file(mem, as_attachment=True, download_name=filename, mimetype='text/csv')
+
+# ---------- SETTINGS ----------
+@app.route('/api/settings', methods=['GET'])
+@login_required
+def api_get_settings():
+    with get_db() as conn:
+        rows = conn.execute("SELECT key, value FROM settings").fetchall()
+    return jsonify({r['key']: r['value'] for r in rows})
+
+@app.route('/api/settings', methods=['POST'])
+@login_required
+def api_set_settings():
+    data = request.get_json() or {}
+    for k, v in data.items():
+        set_setting(k, v)
+    return jsonify({'message': 'Guardado'})
+
+# ============================================================
+# SOCKET.IO
+# ============================================================
+_users_cache = {'ts': 0, 'data': []}
+_users_cache_lock = threading.Lock()
+
+def _active_users_cached():
+    # FIX #19: cache 5s
+    with _users_cache_lock:
+        now = time.time()
+        if (now - _users_cache['ts']) < 5:
+            return _users_cache['data']
+    cutoff = (datetime.now() - timedelta(seconds=30)).isoformat()
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT ip, username FROM users WHERE last_seen >= ?", (cutoff,)
+        ).fetchall()
+    result = [dict(r) for r in rows]
+    with _users_cache_lock:
+        _users_cache['ts'] = now
+        _users_cache['data'] = result
+    return result
+
+_last_users_set = set()
+
+def _emit_users_if_changed():
+    # FIX #2: solo emitir users_update si cambió el conjunto
+    global _last_users_set
+    users = _active_users_cached()
+    current_set = frozenset(u['ip'] for u in users)
+    if current_set != _last_users_set:
+        _last_users_set = current_set
+        socketio.emit('users_update', users, broadcast=True)
+
 @socketio.on('connect')
 def handle_connect():
     ip = request.remote_addr
-    print(f'🔌 Cliente conectado: {ip}')
-    
-    users = add_user(ip)
-    active_users = get_active_users()
-    emit('users_update', active_users, broadcast=True)
-    
-    event = {
-        'timestamp': datetime.now().isoformat(),
-        'type': '👤 USUARIO CONECTADO',
-        'name': get_user_by_ip(ip)['username'] if get_user_by_ip(ip) else f'Usuario {ip}',
-        'ip': ip
-    }
-    save_event(event)
-    emit('event', event, broadcast=True)
+    try:
+        hostname = socket.gethostbyaddr(ip)[0].split('.')[0]
+    except Exception:
+        hostname = f'Usuario_{ip.replace(".", "_")}'
+    with get_db() as conn:
+        conn.execute('''
+            INSERT INTO users (ip, username, first_seen, last_seen, active)
+            VALUES (?, ?, ?, ?, 1)
+            ON CONFLICT(ip) DO UPDATE SET last_seen = excluded.last_seen, active = 1
+        ''', (ip, hostname, now_iso(), now_iso()))
+    _users_cache['ts'] = 0
+    _emit_users_if_changed()
+    log.info("🔌 Cliente conectado: %s", ip)
 
 @socketio.on('disconnect')
 def handle_disconnect():
     ip = request.remote_addr
-    print(f'🔌 Cliente desconectado: {ip}')
-    
-    user = get_user_by_ip(ip)
-    username = user['username'] if user else f'Usuario {ip}'
-    
-    users = remove_user(ip)
-    active_users = get_active_users()
-    emit('users_update', active_users, broadcast=True)
-    
-    event = {
-        'timestamp': datetime.now().isoformat(),
-        'type': '👤 USUARIO DESCONECTADO',
-        'name': username,
-        'ip': ip
-    }
-    save_event(event)
-    emit('event', event, broadcast=True)
+    with get_db() as conn:
+        conn.execute("UPDATE users SET active = 0 WHERE ip = ?", (ip,))
+    _users_cache['ts'] = 0
+    _emit_users_if_changed()
 
-@socketio.on('user_heartbeat')
-def handle_heartbeat(data):
+@socketio.on('heartbeat')
+def handle_heartbeat():
+    # FIX #2: heartbeat no emite users_update siempre
     ip = request.remote_addr
-    users = load_users()
-    for user in users:
-        if user['ip'] == ip:
-            user['last_seen'] = datetime.now().isoformat()
-            user['active'] = True
-            break
-    save_users(users)
-    active_users = get_active_users()
-    emit('users_update', active_users, broadcast=True)
+    with get_db() as conn:
+        conn.execute("UPDATE users SET last_seen = ? WHERE ip = ?", (now_iso(), ip))
+    _users_cache['ts'] = 0  # invalidar cache
+    # no emitir, dejar que el próximo cambio lo haga
 
-@socketio.on('chat_message')
-def handle_chat_message(data):
-    ip = request.remote_addr
-    message = data.get('message', '').strip()
-    
-    if not message:
-        return
-    
-    user = get_user_by_ip(ip)
-    username = user['username'] if user else f'Usuario_{ip.replace(".", "_")}'
-    
-    try:
-        hostname = socket.gethostbyaddr(ip)[0] if ip != '127.0.0.1' else 'localhost'
-    except:
-        hostname = ip
-    
-    chat_data = {
-        'timestamp': datetime.now().isoformat(),
-        'username': username,
-        'ip': ip,
-        'message': message[:500],
-        'channel': hostname if hostname != ip else 'Red Local'
-    }
-    
-    emit('chat_message', chat_data, broadcast=True)
-    log_audit('MENSAJE_CHAT', ip, f'{username}: {message[:50]}...')
-
-@socketio.on('altair_query')
-def handle_altair_query(data):
-    ip = request.remote_addr
-    query = data.get('query', '').strip()
-    
+@socketio.on('ask_altair')
+def handle_altair(data):
+    query = (data.get('query') or '').strip()
     if not query:
         return
-    
-    user = get_user_by_ip(ip)
-    username = user['username'] if user else f'Usuario_{ip.replace(".", "_")}'
-    
-    response = process_altair_query(query, ip)
-    
-    chat_data = {
-        'timestamp': datetime.now().isoformat(),
-        'username': 'Altair',
-        'ip': 'system',
-        'message': '🤖 ' + response,
-        'channel': 'Altair AI'
-    }
-    
-    emit('chat_message', chat_data, broadcast=True)
-    log_audit('ALTAIR_QUERY', ip, f'{username}: {query[:50]}...')
+    response = process_altair(query)
+    emit('altair_response', {'query': query, 'response': response})
+    log_audit('ALTAIR_QUERY', request.remote_addr, query[:80])
 
-def process_altair_query(query, ip):
-    query_lower = query.lower()
-    devices = load_devices()
-    incidents = load_incidents()
-    
-    total = len(devices)
-    online = sum(1 for d in devices if d.get('alive'))
-    offline = total - online
-    down_ips = [d['ip'] for d in devices if not d.get('alive')]
-    
-    if 'hola' in query_lower or 'saludo' in query_lower:
-        return f"¡Hola! Soy Altair, tu asistente de red. ¿En qué puedo ayudarte hoy?"
-    
-    elif 'estado' in query_lower or 'red' in query_lower or 'como está' in query_lower:
+def _active_users():
+    return _active_users_cached()
+
+# ============================================================
+# ALTAIR
+# ============================================================
+def process_altair(query):
+    q = query.lower()
+    with get_db() as conn:
+        stats = conn.execute('''
+            SELECT COUNT(*) as total, SUM(alive) as online
+            FROM devices
+        ''').fetchone()
+        total = stats['total'] or 0
+        online = stats['online'] or 0
+
+    if any(w in q for w in ['hola', 'saludo', 'hey']):
+        return "¡Hola! Soy Altair. Pregúntame sobre el estado de la red."
+
+    if 'estado' in q or 'red' in q or 'cómo está' in q:
         if total == 0:
-            return "No hay dispositivos monitoreados. Agrega algunas IPs para empezar."
-        uptime = round((online / total * 100), 1) if total > 0 else 0
-        return f"📊 Estado de la red: {online} dispositivos en línea, {offline} caídos. Uptime global: {uptime}%."
-    
-    elif 'caído' in query_lower or 'caida' in query_lower or 'problema' in query_lower:
-        if not down_ips:
-            return "✅ No hay dispositivos caídos. Todo funciona correctamente."
-        return f"⚠️ Dispositivos caídos: {', '.join(down_ips)}. ¿Quieres que haga ping a alguno?"
-    
-    elif 'latencia' in query_lower or 'ms' in query_lower:
-        avg_lat = [d['last_latency'] for d in devices if d.get('alive') and d.get('last_latency')]
-        if not avg_lat:
-            return "No hay datos de latencia disponibles."
-        avg = sum(avg_lat) / len(avg_lat)
-        return f"📈 Latencia promedio: {round(avg, 1)}ms. La latencia más baja es {min(avg_lat)}ms y la más alta {max(avg_lat)}ms."
-    
-    elif 'incidentes' in query_lower or 'log' in query_lower:
-        recent = incidents[-10:] if incidents else []
-        if not recent:
-            return "No hay incidentes registrados recientemente."
-        msg = "📋 Últimos incidentes:\n"
-        for inc in recent:
-            time = datetime.fromisoformat(inc['timestamp']).strftime('%H:%M')
-            msg += f"• {time} - {inc['type']} - {inc['name']} ({inc['ip']})\n"
-        return msg
-    
-    elif 'proveedor' in query_lower:
-        import re
-        ip_match = re.search(r'\d+\.\d+\.\d+\.\d+', query)
-        if ip_match:
-            target_ip = ip_match.group()
-            device = next((d for d in devices if d['ip'] == target_ip), None)
-            if device:
-                provider = device.get('provider', 'Desconocido')
-                return f"🌐 El proveedor de {target_ip} es: {provider}"
-            else:
-                return f"❌ No tengo información de {target_ip}. ¿Está monitoreado?"
-        return "📡 Para saber el proveedor, escribe: 'proveedor de [IP]'"
-    
-    elif 'whois' in query_lower:
-        import re
-        ip_match = re.search(r'\d+\.\d+\.\d+\.\d+', query)
-        if ip_match:
-            target_ip = ip_match.group()
-            whois = get_whois(target_ip)
-            if whois:
-                return f"📋 WHOIS de {target_ip}:\n• País: {whois['country']}\n• Región: {whois['region']}\n• Ciudad: {whois['city']}\n• ISP: {whois['isp']}\n• AS: {whois['as']}"
-            else:
-                return f"❌ No se pudo obtener información de {target_ip}"
-        return "📡 Para ver WHOIS, escribe: 'whois de [IP]'"
-    
-    elif 'grupos' in query_lower:
-        groups = load_groups()
-        msg = "📁 Grupos disponibles:\n"
-        for key, group in groups.items():
-            count = len(group.get('ips', []))
-            msg += f"• {group['name']} ({count} dispositivos)\n"
-        return msg
-    
-    elif 'ayuda' in query_lower or 'comandos' in query_lower:
-        return """📋 Comandos disponibles:
-        • "hola" - Saludo
-        • "estado de la red" - Resumen general
-        • "dispositivos caídos" - Lista de IPs caídas
-        • "latencia" - Estadísticas de latencia
-        • "incidentes" - Log de caídas/recaídas
-        • "proveedor de [IP]" - Info del proveedor
-        • "whois de [IP]" - Información WHOIS
-        • "grupos" - Lista de grupos
-        • "ayuda" - Este mensaje"""
-    
-    elif 'gracias' in query_lower:
-        return "¡De nada! Estoy aquí para ayudarte con la red. 😊"
-    
-    else:
-        return f"No entendí tu consulta: '{query}'. Escribe 'ayuda' para ver los comandos disponibles."
+            return "No hay dispositivos monitoreados."
+        return f"📊 {online}/{total} dispositivos en línea ({round(online/total*100,1)}% uptime)."
 
-# ===== RUTAS DE LA API =====
+    if 'caído' in q or 'caida' in q or 'problema' in q:
+        with get_db() as conn:
+            downs = conn.execute(
+                "SELECT name, ip FROM devices WHERE alive = 0"
+            ).fetchall()
+        if not downs:
+            return "✅ No hay dispositivos caídos."
+        return "⚠️ Caídos: " + ", ".join(f"{d['name']} ({d['ip']})" for d in downs)
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+    if 'latencia' in q:
+        with get_db() as conn:
+            row = conn.execute(
+                "SELECT AVG(last_latency) as avg, MIN(last_latency) as mn, MAX(last_latency) as mx "
+                "FROM devices WHERE alive = 1"
+            ).fetchone()
+        if not row['avg']:
+            return "Sin datos de latencia."
+        return f"📈 Latencia: prom {round(row['avg'],1)}ms · mín {row['mn']}ms · máx {row['mx']}ms"
 
-@app.route('/api/devices', methods=['GET'])
-def get_devices():
-    devices = load_devices()
-    return jsonify(devices)
+    if 'incidente' in q or 'evento' in q:
+        with get_db() as conn:
+            events = conn.execute(
+                "SELECT timestamp, device_name, event_type FROM events "
+                "ORDER BY timestamp DESC LIMIT 10"
+            ).fetchall()
+        if not events:
+            return "Sin eventos recientes."
+        lines = [f"• {e['timestamp'][11:16]} {e['event_type']} {e['device_name']}" for e in events]
+        return "📋 Últimos eventos:\n" + "\n".join(lines)
 
-@app.route('/api/devices', methods=['POST'])
-def add_device():
-    data = request.json
-    ip = data.get('ip')
-    name = data.get('name', ip)
-    group = data.get('group', 'default')
-    threshold = data.get('threshold', 100)
-    user_ip = request.remote_addr
-    
-    if not ip:
-        return jsonify({'error': 'IP requerida'}), 400
-    
-    devices = load_devices()
-    
-    if any(d['ip'] == ip for d in devices):
-        return jsonify({'error': 'IP ya existe'}), 400
-    
-    provider = get_provider(ip)
-    print(f"📡 Nuevo dispositivo {ip} - Proveedor: {provider}")
-    
-    new_device = {
-        'ip': ip,
-        'name': name,
-        'history': [],
-        'alive': False,
-        'last_latency': None,
-        'last_check': '--',
-        'provider': provider,
-        'comments': '',
-        'group': group,
-        'threshold': threshold
-    }
-    devices.append(new_device)
-    save_devices(devices)
-    
-    # Actualizar grupo
-    groups = load_groups()
-    if group not in groups:
-        groups[group] = {'name': group, 'ips': [], 'color': '#00d2ff'}
-    if ip not in groups[group].get('ips', []):
-        groups[group]['ips'] = groups[group].get('ips', []) + [ip]
-    save_groups(groups)
-    
-    log_audit('AGREGAR_IP', user_ip, f'IP: {ip}, Nombre: {name}, Proveedor: {provider}')
-    
-    return jsonify(new_device), 201
+    if 'proveedor' in q:
+        m = re.search(r'\d+\.\d+\.\d+\.\d+', query)
+        if m:
+            ip = m.group()
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT provider FROM devices WHERE ip = ?", (ip,)
+                ).fetchone()
+            if row:
+                return f"🌐 {ip} → {row['provider']}"
+            return f"No tengo {ip} en la BD."
+        return "Ej: 'proveedor de 8.8.8.8'"
 
-@app.route('/api/devices/<ip>', methods=['DELETE'])
-def delete_device(ip):
-    user_ip = request.remote_addr
-    devices = load_devices()
-    device = next((d for d in devices if d['ip'] == ip), None)
-    devices = [d for d in devices if d['ip'] != ip]
-    save_devices(devices)
-    
-    # Eliminar de grupos
-    groups = load_groups()
-    for key, group in groups.items():
-        if ip in group.get('ips', []):
-            group['ips'].remove(ip)
-    save_groups(groups)
-    
-    if device:
-        log_audit('ELIMINAR_IP', user_ip, f'IP: {ip}, Nombre: {device.get("name", ip)}')
-    
-    return jsonify({'message': 'Eliminado'})
+    if 'whois' in q:
+        m = re.search(r'\d+\.\d+\.\d+\.\d+', query)
+        if m:
+            w = get_whois(m.group())
+            if w:
+                return f"📋 {m.group()}:\n• País: {w['country']}\n• ISP: {w['isp']}\n• AS: {w['as']}"
+            return "No se pudo obtener."
+        return "Ej: 'whois de 8.8.8.8'"
 
-@app.route('/api/devices/<ip>', methods=['PUT'])
-def update_device(ip):
-    data = request.json
-    new_name = data.get('name')
-    comments = data.get('comments')
-    group = data.get('group')
-    threshold = data.get('threshold')
-    user_ip = request.remote_addr
-    
-    devices = load_devices()
-    
-    for device in devices:
-        if device['ip'] == ip:
-            if new_name:
-                old_name = device.get('name', ip)
-                device['name'] = new_name
-                log_audit('RENOMBRAR_IP', user_ip, f'IP: {ip}, Antiguo: {old_name}, Nuevo: {new_name}')
-            if comments is not None:
-                device['comments'] = comments
-                log_audit('COMENTARIO_IP', user_ip, f'IP: {ip}, Comentario: {comments}')
-            if group is not None:
-                old_group = device.get('group', 'default')
-                device['group'] = group
-                # Actualizar grupos
-                groups = load_groups()
-                if old_group in groups and ip in groups[old_group].get('ips', []):
-                    groups[old_group]['ips'].remove(ip)
-                if group not in groups:
-                    groups[group] = {'name': group, 'ips': [], 'color': '#00d2ff'}
-                if ip not in groups[group].get('ips', []):
-                    groups[group]['ips'] = groups[group].get('ips', []) + [ip]
-                save_groups(groups)
-                log_audit('GRUPO_IP', user_ip, f'IP: {ip}, Grupo: {group}')
-            if threshold is not None:
-                device['threshold'] = threshold
-                log_audit('UMBRAL_IP', user_ip, f'IP: {ip}, Umbral: {threshold}ms')
-            save_devices(devices)
-            return jsonify(device)
-    
-    return jsonify({'error': 'Dispositivo no encontrado'}), 404
+    if 'ayuda' in q or 'help' in q or 'comandos' in q:
+        return ("📋 Comandos:\n"
+                "• estado de la red\n"
+                "• dispositivos caídos\n"
+                "• latencia\n"
+                "• incidentes\n"
+                "• proveedor de [IP]\n"
+                "• whois de [IP]")
 
-@app.route('/api/ping/<ip>', methods=['GET'])
-def ping_single(ip):
-    latency = ping_ip(ip)
-    return jsonify({
-        'ip': ip,
-        'alive': latency is not None,
-        'latency': latency
-    })
+    return f"No entendí: '{query}'. Escribe 'ayuda'."
 
-@app.route('/api/update', methods=['POST'])
-def update_all():
-    devices = update_all_devices()
-    return jsonify(devices)
-
-@app.route('/api/events', methods=['GET'])
-def get_events():
-    events = load_events()
-    return jsonify(events[-50:])
-
-@app.route('/api/users', methods=['GET'])
-def get_users():
-    users = get_active_users()
-    return jsonify(users)
-
-@app.route('/api/uptime/<ip>', methods=['GET'])
-def get_uptime(ip):
-    devices = load_devices()
-    device = next((d for d in devices if d['ip'] == ip), None)
-    
-    if not device:
-        return jsonify({'error': 'IP no encontrada'}), 404
-    
-    history = device.get('history', [])
-    periods = {'1d': 1, '7d': 7, '30d': 30}
-    
-    result = {}
-    for period_name, days in periods.items():
-        result[period_name] = calculate_uptime(history, days)
-    
-    return jsonify(result)
-
-@app.route('/api/ranking', methods=['GET'])
-def get_ranking():
-    devices = load_devices()
-    
-    ranking = []
-    for device in devices:
-        history = device.get('history', [])
-        if history:
-            latency_values = [h['latency'] for h in history if h['latency'] is not None]
-            if latency_values:
-                ranking.append({
-                    'ip': device['ip'],
-                    'name': device.get('name', device['ip']),
-                    'avg_latency': round(sum(latency_values) / len(latency_values), 2),
-                    'min_latency': min(latency_values),
-                    'max_latency': max(latency_values),
-                    'alive': device.get('alive', False),
-                    'uptime_7d': calculate_uptime(history, 7),
-                    'provider': device.get('provider', 'Desconocido')
-                })
-    
-    ranking.sort(key=lambda x: x['avg_latency'])
-    return jsonify(ranking)
-
-@app.route('/api/stats', methods=['GET'])
-def get_stats():
-    devices = load_devices()
-    groups = load_groups()
-    
-    total = len(devices)
-    online = sum(1 for d in devices if d.get('alive'))
-    
-    latencies = [d['last_latency'] for d in devices if d.get('alive') and d.get('last_latency')]
-    
-    # Estadísticas por proveedor
-    provider_stats = {}
-    for device in devices:
-        provider = device.get('provider', 'Desconocido')
-        if provider not in provider_stats:
-            provider_stats[provider] = {'total': 0, 'online': 0, 'latencies': []}
-        provider_stats[provider]['total'] += 1
-        if device.get('alive'):
-            provider_stats[provider]['online'] += 1
-        if device.get('last_latency'):
-            provider_stats[provider]['latencies'].append(device.get('last_latency'))
-    
-    for provider in provider_stats:
-        if provider_stats[provider]['latencies']:
-            provider_stats[provider]['avg'] = round(sum(provider_stats[provider]['latencies']) / len(provider_stats[provider]['latencies']), 1)
-        else:
-            provider_stats[provider]['avg'] = 0
-    
-    stats = {
-        'total': total,
-        'online': online,
-        'offline': total - online,
-        'avg_latency': round(sum(latencies) / len(latencies), 2) if latencies else 0,
-        'min_latency': min(latencies) if latencies else 0,
-        'max_latency': max(latencies) if latencies else 0,
-        'uptime': round((online / total * 100), 1) if total > 0 else 0,
-        'providers': provider_stats,
-        'groups': groups
-    }
-    
-    return jsonify(stats)
-
-@app.route('/api/scan', methods=['POST'])
-def scan_network_api():
-    data = request.json
-    network = data.get('network', '192.168.1.')
-    start = data.get('start', 1)
-    end = data.get('end', 20)
-    user_ip = request.remote_addr
-    
-    results = scan_network(network, start, end)
-    
-    log_audit('ESCANEAR_RED', user_ip, f'Red: {network}{start}-{end}, Encontrados: {len(results)}')
-    
-    return jsonify(results)
-
-@app.route('/api/incidents', methods=['GET'])
-def get_incidents():
-    incidents = load_incidents()
-    return jsonify(incidents[-50:])
-
-@app.route('/api/whois/<ip>', methods=['GET'])
-def get_whois_api(ip):
-    whois = get_whois(ip)
-    if whois:
-        return jsonify(whois)
-    return jsonify({'error': 'No se pudo obtener información'}), 404
-
-@app.route('/api/groups', methods=['GET'])
-def get_groups():
-    groups = load_groups()
-    return jsonify(groups)
-
-@app.route('/api/groups', methods=['POST'])
-def create_group():
-    data = request.json
-    group_id = data.get('id', str(uuid.uuid4())[:8])
-    name = data.get('name', 'Nuevo Grupo')
-    color = data.get('color', '#00d2ff')
-    user_ip = request.remote_addr
-    
-    groups = load_groups()
-    groups[group_id] = {'name': name, 'ips': [], 'color': color}
-    save_groups(groups)
-    
-    log_audit('CREAR_GRUPO', user_ip, f'Grupo: {name}')
-    
-    return jsonify({'id': group_id, 'name': name, 'color': color})
-
-@app.route('/api/groups/<group_id>', methods=['DELETE'])
-def delete_group(group_id):
-    user_ip = request.remote_addr
-    groups = load_groups()
-    
-    if group_id in groups:
-        # Mover IPs al grupo default
-        default_ips = groups['default'].get('ips', [])
-        for ip in groups[group_id].get('ips', []):
-            if ip not in default_ips:
-                default_ips.append(ip)
-        groups['default']['ips'] = default_ips
-        del groups[group_id]
-        save_groups(groups)
-        log_audit('ELIMINAR_GRUPO', user_ip, f'Grupo: {group_id}')
-    
-    return jsonify({'message': 'Eliminado'})
-
-@app.route('/api/export/report', methods=['POST'])
-def export_report():
-    data = request.json
-    devices = data.get('devices', [])
-    user_ip = request.remote_addr
-    
-    if not devices:
-        devices = load_devices()
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"reporte_completo_{timestamp}.xlsx"
-    filepath = os.path.join(SHARED_FOLDER, 'exports', filename)
-    
-    wb = openpyxl.Workbook()
-    
-    # Hoja de resumen
-    ws = wb.active
-    ws.title = "Resumen"
-    
-    headers = ['IP', 'Nombre', 'Estado', 'Latencia (ms)', 'Última prueba', 'Uptime 7d', 'Uptime 30d', 'Proveedor', 'Grupo', 'Comentarios']
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=1, column=col, value=header)
-        cell.font = Font(bold=True, color="FFFFFF")
-        cell.fill = PatternFill(start_color="00d2ff", end_color="00d2ff", fill_type="solid")
-        cell.alignment = Alignment(horizontal="center")
-    
-    for row, device in enumerate(devices, 2):
-        alive = device.get('alive', False)
-        latency = device.get('last_latency', '--')
-        latency_text = f"{latency}ms" if latency else '--'
-        status = 'En línea' if alive else 'Desconectado'
-        uptime_7d = calculate_uptime(device.get('history', []), 7)
-        uptime_30d = calculate_uptime(device.get('history', []), 30)
-        provider = device.get('provider', 'Desconocido')
-        group = device.get('group', 'default')
-        comments = device.get('comments', '')
-        
-        ws.cell(row=row, column=1, value=device['ip'])
-        ws.cell(row=row, column=2, value=device.get('name', device['ip']))
-        ws.cell(row=row, column=3, value=status)
-        ws.cell(row=row, column=4, value=latency_text)
-        ws.cell(row=row, column=5, value=device.get('last_check', '--'))
-        ws.cell(row=row, column=6, value=f"{uptime_7d}%")
-        ws.cell(row=row, column=7, value=f"{uptime_30d}%")
-        ws.cell(row=row, column=8, value=provider)
-        ws.cell(row=row, column=9, value=group)
-        ws.cell(row=row, column=10, value=comments)
-    
-    for col in range(1, 11):
-        ws.column_dimensions[chr(64 + col)].width = 18
-    
-    # Hoja de histórico
-    ws_history = wb.create_sheet("Histórico")
-    ws_history.cell(row=1, column=1, value="Timestamp")
-    ws_history.cell(row=1, column=2, value="IP")
-    ws_history.cell(row=1, column=3, value="Nombre")
-    ws_history.cell(row=1, column=4, value="Latencia (ms)")
-    ws_history.cell(row=1, column=5, value="Estado")
-    
-    row = 2
-    for device in devices:
-        for entry in device.get('history', [])[-100:]:
-            ws_history.cell(row=row, column=1, value=entry.get('timestamp', ''))
-            ws_history.cell(row=row, column=2, value=device['ip'])
-            ws_history.cell(row=row, column=3, value=device.get('name', device['ip']))
-            ws_history.cell(row=row, column=4, value=entry.get('latency', ''))
-            ws_history.cell(row=row, column=5, value='En línea' if entry.get('alive') else 'Desconectado')
-            row += 1
-    
-    # Hoja de incidentes
-    ws_incidents = wb.create_sheet("Incidentes")
-    incidents = load_incidents()
-    ws_incidents.cell(row=1, column=1, value="Timestamp")
-    ws_incidents.cell(row=1, column=2, value="IP")
-    ws_incidents.cell(row=1, column=3, value="Nombre")
-    ws_incidents.cell(row=1, column=4, value="Tipo")
-    ws_incidents.cell(row=1, column=5, value="Latencia (ms)")
-    
-    for idx, inc in enumerate(incidents[-100:], 2):
-        ws_incidents.cell(row=idx, column=1, value=inc.get('timestamp', ''))
-        ws_incidents.cell(row=idx, column=2, value=inc.get('ip', ''))
-        ws_incidents.cell(row=idx, column=3, value=inc.get('name', ''))
-        ws_incidents.cell(row=idx, column=4, value=inc.get('type', ''))
-        ws_incidents.cell(row=idx, column=5, value=inc.get('latency', ''))
-    
-    wb.save(filepath)
-    
-    log_audit('EXPORTAR_REPORTE', user_ip, f'Archivo: {filename}')
-    
-    return send_file(filepath, as_attachment=True, download_name=filename)
-
-@app.route('/api/audit', methods=['GET'])
-def get_audit():
-    try:
-        with open(AUDIT_FILE, 'r', encoding='utf-8') as f:
-            lines = f.readlines()
-            return jsonify(lines[-100:])
-    except FileNotFoundError:
-        return jsonify([])
-
-@app.route('/api/config/theme', methods=['POST'])
-def set_theme():
-    data = request.json
-    user_ip = request.remote_addr
-    theme = data.get('theme', 'dark')
-    
-    # Guardar tema en el usuario
-    users = load_users()
-    for user in users:
-        if user['ip'] == user_ip:
-            user['theme'] = theme
-            break
-    save_users(users)
-    
-    return jsonify({'theme': theme})
-
-@app.route('/api/config/audio', methods=['POST'])
-def set_audio():
-    data = request.json
-    user_ip = request.remote_addr
-    sound = data.get('sound', 'default')
-    
-    users = load_users()
-    for user in users:
-        if user['ip'] == user_ip:
-            user['sound'] = sound
-            break
-    save_users(users)
-    
-    return jsonify({'sound': sound})
-
-@app.route('/api/config/telegram', methods=['POST'])
-def set_telegram():
-    data = request.json
-    bot_token = data.get('bot_token', '')
-    chat_id = data.get('chat_id', '')
-    user_ip = request.remote_addr
-    
-    global TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-    TELEGRAM_BOT_TOKEN = bot_token
-    TELEGRAM_CHAT_ID = chat_id
-    
-    log_audit('CONFIGURAR_TELEGRAM', user_ip, 'Token y Chat ID configurados')
-    
-    # Probar conexión
-    try:
-        url = f"https://api.telegram.org/bot{bot_token}/getMe"
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            return jsonify({'success': True, 'message': 'Conexión exitosa'})
-        else:
-            return jsonify({'success': False, 'message': 'Error en la conexión'})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
+# ============================================================
+# ARRANQUE
+# ============================================================
 if __name__ == '__main__':
-    if not os.path.exists(DATA_FILE):
-        load_devices()
-    
-    local_ip = get_local_ip()
-    
-    print("=" * 70)
-    print("🚀 MONITOR DE RED - VERSIÓN PROFESIONAL")
-    print("=" * 70)
-    print(f"📁 Datos guardados en: {SHARED_FOLDER}")
-    print(f"📡 Acceso LOCAL: http://127.0.0.1:5000")
-    print(f"📡 Acceso REMOTO: http://{local_ip}:5000")
-    print("=" * 70)
-    print("📋 CARACTERÍSTICAS:")
-    print("   ✅ Proveedores comerciales: Claro, ETB, Movistar, etc.")
-    print("   ✅ Datos compartidos entre usuarios")
-    print("   ✅ Chat con Altair (IA)")
-    print("   ✅ Alertas visuales en bordes")
-    print("   ✅ Miniaturas de gráficas")
-    print("   ✅ Filtros por estado e IP")
-    print("   ✅ Escaneo de red")
-    print("   ✅ Log de incidentes")
-    print("   ✅ WHOIS integrado")
-    print("   ✅ Grupos de dispositivos")
-    print("   ✅ Temas de color")
-    print("   ✅ Configuración de audio")
-    print("   ✅ Integración con Telegram")
-    print("   ✅ Exportar reporte completo")
-    print("=" * 70)
-    print("Presiona CTRL+C para detener")
-    print("=" * 70)
-    
+    init_db()
+    start_worker()
+    local_ip = '127.0.0.1'
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        pass
+
+    print("=" * 60)
+    print("🌐 MONITOR DE RED")
+    print("=" * 60)
+    print(f"📁 Datos:      {DATA_DIR}")
+    print(f"📡 Local:      http://127.0.0.1:5001")
+    print(f"📡 Red:        http://{local_ip}:5001")
+    print(f"🔐 Password:   {'(sin auth)' if not ADMIN_PASSWORD else '(configurado)'}")
+    print(f"⏱️  Ping:       cada {PING_INTERVAL}s")
+    print(f"📝 Historial:  cada {HISTORY_INTERVAL}s ({HISTORY_RETENTION_DAYS} días)")
+    print(f"📋 Eventos:    {EVENTS_RETENTION_DAYS} días")
+    print(f"📝 Auditoría:  {AUDIT_RETENTION_DAYS} días")
+    print("=" * 60)
     socketio.run(app, debug=False, host='0.0.0.0', port=5001)
