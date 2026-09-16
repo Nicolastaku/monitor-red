@@ -6,209 +6,500 @@
 <title>Monitor de Red</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+/* ============================================================
+   PALETA basada en el login
+   ============================================================ */
 :root {
-    --bg: #f4f6f8;
-    --card: #ffffff;
-    --card-hover: #fafbfc;
-    --border: #e6e9ed;
-    --border-soft: #f0f2f5;
-    --text: #2c3e50;
-    --text-dim: #7f8c8d;
-    --accent: #d35400;
-    --accent-hover: #b84a00;
-    --green: #27ae60;
-    --red: #e74c3c;
-    --yellow: #f39c12;
-    --blue: #2980b9;
-    --shadow: 0 1px 3px rgba(0,0,0,0.04);
-    --shadow-lg: 0 4px 20px rgba(0,0,0,0.08);
-    --chart-grid: rgba(0,0,0,0.05);
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 28px;
+    --space-7: 40px;
+
+    --font-xs: 11px;
+    --font-sm: 12px;
+    --font-base: 13px;
+    --font-md: 14px;
+    --font-lg: 16px;
+    --font-xl: 20px;
+    --font-2xl: 26px;
+    --font-3xl: 34px;
+
+    /* ==== MODO CLARO (default) ==== */
+    --bg: #f5f7fa;              /* fondo general (como el del login) */
+    --surface: #ffffff;         /* tarjetas */
+    --surface-2: #f0f3f7;       /* hover sutil */
+    --surface-3: #e2e8f0;       /* elevación */
+    --border: #e2e8f0;          /* bordes suaves */
+    --border-strong: #cbd5e1;
+
+    --text: #1e293b;            /* texto principal */
+    --text-secondary: #64748b;  /* texto secundario */
+    --text-muted: #94a3b8;      /* texto terciario */
+
+    --accent: #2563eb;          /* azul (como el botón del login) */
+    --accent-hover: #1d4ed8;
+    --accent-soft: rgba(37, 99, 235, 0.08);
+    --accent-lighter: #dbeafe;
+
+    --green: #10b981;
+    --green-soft: rgba(16, 185, 129, 0.1);
+    --red: #ef4444;
+    --red-soft: rgba(239, 68, 68, 0.08);
+    --yellow: #f59e0b;
+    --yellow-soft: rgba(245, 158, 11, 0.1);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.08);
+    --shadow-xl: 0 20px 50px rgba(0, 0, 0, 0.12);
+
+    --radius: 10px;
+    --radius-sm: 6px;
+    --radius-lg: 14px;
 }
+
+/* ==== MODO OSCURO ==== */
 body.dark {
-    --bg: #0f1419;
-    --card: #1a2129;
-    --card-hover: #232b34;
-    --border: #2a333d;
-    --border-soft: #232b34;
-    --text: #e6edf3;
-    --text-dim: #8b949e;
-    --accent: #ff8c42;
-    --accent-hover: #ff7320;
-    --green: #3fb950;
-    --red: #f85149;
-    --yellow: #e3b341;
-    --blue: #58a6ff;
-    --shadow: 0 1px 3px rgba(0,0,0,0.3);
-    --shadow-lg: 0 4px 20px rgba(0,0,0,0.4);
-    --chart-grid: rgba(255,255,255,0.06);
+    --bg: #1e293b;              /* azul-gris oscuro (mismo tono del texto claro) */
+    --surface: #0f172a;         /* superficie */
+    --surface-2: #1a2536;       /* hover */
+    --surface-3: #273449;       /* elevación */
+    --border: #334155;
+    --border-strong: #475569;
+
+    --text: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+
+    --accent: #60a5fa;
+    --accent-hover: #93c5fd;
+    --accent-soft: rgba(96, 165, 250, 0.12);
+    --accent-lighter: #1e3a8a;
+
+    --green: #34d399;
+    --green-soft: rgba(52, 211, 153, 0.12);
+    --red: #f87171;
+    --red-soft: rgba(248, 113, 113, 0.12);
+    --yellow: #fbbf24;
+    --yellow-soft: rgba(251, 191, 36, 0.12);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 20px 50px rgba(0, 0, 0, 0.6);
 }
+
+/* ============================================================
+   RESET
+   ============================================================ */
 * { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; }
+
 body {
-    font-family: 'Inter', -apple-system, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     background: var(--bg);
     color: var(--text);
-    font-size: 14px;
+    font-size: var(--font-md);
     line-height: 1.5;
     min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
     transition: background 0.2s, color 0.2s;
 }
-.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
 
+.container {
+    max-width: 1400px;
+    width: 100%;
+    margin: 0 auto;
+    padding: var(--space-6);
+    flex: 1;
+}
+
+/* ============================================================
+   HEADER
+   ============================================================ */
 .header {
-    display: flex; justify-content: space-between; align-items: center;
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 16px 22px; margin-bottom: 20px;
-    box-shadow: var(--shadow); flex-wrap: wrap; gap: 12px;
-    transition: border-color 0.3s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-4) var(--space-5);
+    background: var(--surface);
+    border-radius: var(--radius);
+    margin-bottom: var(--space-5);
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    box-shadow: var(--shadow);
+    transition: all 0.2s;
 }
-/* FIX #24: borde rojo si hay caídos */
-.header.has-down { border-color: var(--red); }
-.header h1 { font-size: 18px; font-weight: 700; color: var(--accent); }
-.header h1 span { color: var(--text-dim); font-weight: 400; font-size: 13px; margin-left: 8px; }
-.header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.header.has-down {
+    box-shadow: 0 0 0 1px var(--red), var(--shadow);
+}
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    flex-wrap: wrap;
+}
+.header h1 {
+    font-size: var(--font-lg);
+    font-weight: 700;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    letter-spacing: -0.02em;
+}
+.header h1 .logo {
+    color: var(--accent);
+    font-size: 18px;
+}
+.header .meta {
+    font-size: var(--font-sm);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+.header .meta .sep {
+    color: var(--border-strong);
+}
+.header .meta strong {
+    color: var(--text);
+    font-weight: 600;
+}
+.header-actions {
+    display: flex;
+    gap: var(--space-1);
+    align-items: center;
+}
 
+/* ============================================================
+   BOTONES
+   ============================================================ */
 .btn {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 14px; border-radius: 8px; border: none;
-    font-size: 13px; font-weight: 500; font-family: inherit;
-    cursor: pointer; transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: 8px 14px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    font-size: var(--font-base);
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    background: transparent;
+    color: var(--text);
 }
-.btn-primary { background: var(--accent); color: white; }
-.btn-primary:hover { background: var(--accent-hover); }
-.btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
-.btn-secondary:hover { background: var(--card-hover); }
-.btn-danger { background: var(--red); color: white; }
-.btn-small { padding: 5px 10px; font-size: 12px; }
+.btn:hover {
+    background: var(--surface-2);
+}
+.btn-primary {
+    background: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
+    box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+}
+.btn-primary:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+}
+.btn-secondary {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text-secondary);
+}
+.btn-secondary:hover {
+    background: var(--surface-2);
+    border-color: var(--border-strong);
+    color: var(--text);
+}
+.btn-danger {
+    color: var(--red);
+    border: 1px solid transparent;
+}
+.btn-danger:hover {
+    background: var(--red-soft);
+    border-color: var(--red);
+}
+.btn-small {
+    padding: 5px 10px;
+    font-size: var(--font-sm);
+}
 .btn-icon {
-    padding: 6px 10px; font-size: 14px; background: var(--bg);
-    border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
-    color: var(--text); transition: all 0.15s;
+    padding: 8px;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 15px;
 }
-.btn-icon:hover { background: var(--card-hover); }
+.btn-icon:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
 
+/* ============================================================
+   NAV
+   ============================================================ */
 .nav {
-    display: flex; gap: 4px; margin-bottom: 20px;
-    background: var(--card); padding: 6px; border-radius: 10px;
-    border: 1px solid var(--border); box-shadow: var(--shadow);
+    display: flex;
+    gap: var(--space-1);
+    margin-bottom: var(--space-5);
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 6px;
+    box-shadow: var(--shadow);
     overflow-x: auto;
 }
 .nav button {
-    padding: 8px 16px; border: none; background: transparent;
-    color: var(--text-dim); font-size: 13px; font-weight: 500;
-    border-radius: 8px; cursor: pointer; white-space: nowrap;
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--font-base);
+    font-weight: 500;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
     font-family: inherit;
+    transition: all 0.15s;
 }
-.nav button:hover { background: var(--bg); color: var(--text); }
-.nav button.active { background: var(--accent); color: white; }
+.nav button:hover {
+    color: var(--text);
+    background: var(--surface-2);
+}
+.nav button.active {
+    background: var(--accent);
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+}
 
+/* ============================================================
+   CARDS
+   ============================================================ */
 .card {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 20px; margin-bottom: 20px;
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: var(--space-5);
+    margin-bottom: var(--space-5);
     box-shadow: var(--shadow);
+    transition: box-shadow 0.2s;
 }
-.card-title { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+.card:hover {
+    box-shadow: var(--shadow-md);
+}
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-4);
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+.card-title {
+    font-size: var(--font-lg);
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+}
 
+/* ============================================================
+   STATS
+   ============================================================ */
 .stats-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 14px; margin-bottom: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--space-4);
+    margin-bottom: var(--space-5);
 }
 .stat-card {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 16px; box-shadow: var(--shadow);
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: var(--space-5);
+    box-shadow: var(--shadow);
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
 }
-.stat-card .label { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
-.stat-card .value { font-size: 26px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
-.stat-card .value.green { color: var(--green); }
-.stat-card .value.red { color: var(--red); }
-.stat-card .value.yellow { color: var(--yellow); }
-.stat-card .value.blue { color: var(--blue); }
+.stat-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+}
+.stat-card .label {
+    font-size: var(--font-sm);
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-bottom: var(--space-2);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.stat-card .label .icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+.stat-card.green .label .icon { background: var(--green-soft); color: var(--green); }
+.stat-card.red .label .icon { background: var(--red-soft); color: var(--red); }
+.stat-card.yellow .label .icon { background: var(--yellow-soft); color: var(--yellow); }
 
+.stat-card .value {
+    font-size: var(--font-2xl);
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.03em;
+    line-height: 1;
+}
+.stat-card .delta {
+    font-size: var(--font-sm);
+    color: var(--text-muted);
+    margin-top: var(--space-2);
+}
+.stat-card.green .value { color: var(--green); }
+.stat-card.red .value { color: var(--red); }
+.stat-card.yellow .value { color: var(--yellow); }
+.stat-card.blue .value { color: var(--accent); }
+
+/* ============================================================
+   FORM
+   ============================================================ */
 .form-row {
-    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    align-items: center;
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: var(--space-4);
+    margin-bottom: var(--space-5);
     box-shadow: var(--shadow);
 }
 .form-row input, .form-row select {
-    padding: 9px 14px; border: 1px solid var(--border);
-    border-radius: 8px; font-size: 13px; font-family: inherit;
-    background: var(--bg); color: var(--text); min-width: 140px;
+    padding: 9px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-base);
+    font-family: inherit;
+    background: var(--surface);
+    color: var(--text);
+    min-width: 140px;
+    transition: all 0.15s;
+    height: 38px;
 }
 .form-row input:focus, .form-row select:focus {
-    outline: none; border-color: var(--accent);
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.form-row input::placeholder {
+    color: var(--text-muted);
 }
 
-.table { width: 100%; border-collapse: collapse; }
+/* ============================================================
+   TABLE
+   ============================================================ */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-base);
+}
 .table th {
-    text-align: left; padding: 10px 12px; font-size: 11px;
-    text-transform: uppercase; letter-spacing: 0.5px;
-    color: var(--text-dim); border-bottom: 1px solid var(--border);
+    text-align: left;
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--font-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
     font-weight: 600;
+    user-select: none;
 }
-.table td { padding: 12px; border-bottom: 1px solid var(--border-soft); font-size: 13px; }
-.table tr:hover { background: var(--card-hover); }
-.table tr.down { background: rgba(231,76,60,0.06); }
-body.dark .table tr.down { background: rgba(248,81,73,0.08); }
-.table .ip { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
-.table .latency-ok { color: var(--green); font-family: 'JetBrains Mono', monospace; }
-.table .latency-bad { color: var(--red); font-family: 'JetBrains Mono', monospace; }
-.table .latency-high { color: var(--yellow); font-family: 'JetBrains Mono', monospace; }
-.dot {
-    display: inline-block; width: 8px; height: 8px;
-    border-radius: 50%; margin-right: 6px;
+.table th.sortable { cursor: pointer; transition: color 0.15s; }
+.table th.sortable:hover { color: var(--accent); }
+.table th .sort-indicator { margin-left: 4px; font-size: 9px; }
+.table td {
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--font-base);
+    color: var(--text-secondary);
 }
-.dot.online { background: var(--green); }
-.dot.offline { background: var(--red); }
-.dot.maintenance { background: var(--blue); }
+.table tr:last-child td { border-bottom: none; }
+.table tr:hover { background: var(--surface-2); }
+.table tr.down { background: var(--red-soft); }
+.table tr.down:hover { background: rgba(239, 68, 68, 0.12); }
+.table .ip {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    font-size: var(--font-base);
+    color: var(--text);
+}
+.table .latency-ok { color: var(--green); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+.table .latency-bad { color: var(--red); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+.table .latency-high { color: var(--yellow); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
 
+.dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: var(--space-2);
+    vertical-align: middle;
+}
+.dot.online { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+.dot.offline { background: var(--red); box-shadow: 0 0 0 3px var(--red-soft); }
+.dot.maintenance { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* ============================================================
+   CHART GRID
+   ============================================================ */
 .chart-grid {
     display: grid;
-    gap: 12px;
+    gap: var(--space-4);
     width: 100%;
 }
-
 .chart-box {
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 12px; box-shadow: var(--shadow);
-    transition: border-color 0.15s;
-    display: flex; flex-direction: column;
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: var(--space-4);
+    box-shadow: var(--shadow);
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
     min-width: 0;
 }
-.chart-box:hover { border-color: var(--accent); }
-.chart-box .head {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 6px; gap: 6px;
-    cursor: pointer;
-}
-.chart-box .head:hover .name { color: var(--accent); }
-.chart-box .head > div {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    min-width: 0; flex: 1;
-}
-.chart-box .head .name {
-    font-weight: 600; font-size: 12px;
-    transition: color 0.15s;
-}
-.chart-box .head .ip {
-    font-family: 'JetBrains Mono', monospace; font-size: 10px;
-    color: var(--text-dim); margin-left: 6px;
-}
-.chart-box .head .status {
-    font-size: 9px; padding: 2px 7px; border-radius: 10px;
-    font-weight: 600; white-space: nowrap; flex-shrink: 0;
-}
-.chart-box .head .status.online { background: rgba(39,174,96,0.15); color: var(--green); }
-.chart-box .head .status.offline { background: rgba(231,76,60,0.15); color: var(--red); }
-.chart-box .head .status.maintenance { background: rgba(41,128,185,0.15); color: var(--blue); }
-.chart-box .chart-container {
-    position: relative;
-    width: 100%;
-    min-width: 0;
+.chart-box:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
 }
 .chart-box.is-down {
-    border-color: var(--red) !important;
+    box-shadow: 0 0 0 2px var(--red), var(--shadow);
 }
 .chart-box.is-down .head .status {
     animation: pulseBadge 1.5s ease-in-out infinite;
@@ -217,178 +508,513 @@ body.dark .table tr.down { background: rgba(248,81,73,0.08); }
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
 }
+.chart-box .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-3);
+    gap: var(--space-2);
+    cursor: pointer;
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border);
+}
+.chart-box .head:hover .name { color: var(--accent); }
+.chart-box .head > div {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+}
+.chart-box .head .name {
+    font-weight: 600;
+    font-size: var(--font-base);
+    transition: color 0.15s;
+    color: var(--text);
+}
+.chart-box .head .ip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+    margin-left: var(--space-2);
+    font-weight: 400;
+}
+.chart-box .head .status {
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.chart-box .head .status.online {
+    background: var(--green-soft);
+    color: var(--green);
+}
+.chart-box .head .status.offline {
+    background: var(--red-soft);
+    color: var(--red);
+}
+.chart-box .head .status.maintenance {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+.chart-box .chart-container {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+}
 
+/* ============================================================
+   SELECTOR DE MODO
+   ============================================================ */
 .chart-mode-selector {
-    display: flex; gap: 4px;
-    background: var(--bg); padding: 4px;
-    border-radius: 8px; border: 1px solid var(--border);
-    flex-wrap: wrap;
+    display: flex;
+    gap: var(--space-1);
+    background: var(--surface-2);
+    padding: 4px;
+    border-radius: var(--radius-sm);
 }
 .chart-mode-selector button {
-    padding: 6px 12px; border: none; background: transparent;
-    color: var(--text-dim); font-size: 12px; font-weight: 500;
-    border-radius: 6px; cursor: pointer; font-family: inherit;
-    transition: all 0.15s; white-space: nowrap;
+    padding: 6px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--font-sm);
+    font-weight: 500;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.15s;
+    white-space: nowrap;
 }
-.chart-mode-selector button:hover { background: var(--card-hover); color: var(--text); }
-.chart-mode-selector button.active { background: var(--accent); color: white; }
+.chart-mode-selector button:hover { color: var(--text); }
+.chart-mode-selector button.active {
+    background: var(--surface);
+    color: var(--accent);
+    box-shadow: var(--shadow-sm);
+}
 
+/* ============================================================
+   SEMÁFORO
+   ============================================================ */
 .semaforo-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 8px; width: 100%;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: var(--space-3);
+    width: 100%;
 }
 .semaforo-item {
-    background: var(--bg); border: 2px solid var(--border);
-    border-radius: 8px; padding: 10px 8px;
-    cursor: pointer; text-align: center;
-    transition: all 0.15s; position: relative;
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: var(--space-4) var(--space-3);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+    overflow: hidden;
 }
-.semaforo-item:hover { transform: translateY(-2px); border-color: var(--accent); }
+.semaforo-item:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
 .semaforo-item .dot-big {
-    width: 22px; height: 22px; border-radius: 50%;
-    margin: 0 auto 6px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    margin: 0 auto var(--space-3);
 }
 .semaforo-item .sem-name {
-    font-size: 11px; font-weight: 600;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: var(--font-sm);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     color: var(--text);
 }
 .semaforo-item .sem-ip {
-    font-size: 9px; color: var(--text-dim);
-    font-family: 'JetBrains Mono', monospace; margin-top: 2px;
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 2px;
 }
 .semaforo-item .sem-lat {
-    font-size: 10px; font-family: 'JetBrains Mono', monospace;
-    margin-top: 4px; font-weight: 600;
+    font-size: var(--font-sm);
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: var(--space-2);
+    font-weight: 600;
 }
-.semaforo-item.online { border-color: var(--green); }
-.semaforo-item.online .dot-big { background: var(--green); }
+.semaforo-item.online .dot-big { background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
 .semaforo-item.online .sem-lat { color: var(--green); }
-.semaforo-item.offline { border-color: var(--red); animation: pulseBadge 1.5s ease-in-out infinite; }
-.semaforo-item.offline .dot-big { background: var(--red); }
+.semaforo-item.offline .dot-big { background: var(--red); box-shadow: 0 0 0 4px var(--red-soft); animation: pulseDot 1.5s ease-in-out infinite; }
 .semaforo-item.offline .sem-lat { color: var(--red); }
-.semaforo-item.high { border-color: var(--yellow); }
-.semaforo-item.high .dot-big { background: var(--yellow); }
+.semaforo-item.high .dot-big { background: var(--yellow); box-shadow: 0 0 0 4px var(--yellow-soft); }
 .semaforo-item.high .sem-lat { color: var(--yellow); }
-.semaforo-item.maintenance { border-color: var(--blue); }
-.semaforo-item.maintenance .dot-big { background: var(--blue); }
-.semaforo-item.maintenance .sem-lat { color: var(--blue); }
+.semaforo-item.maintenance .dot-big { background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.semaforo-item.maintenance .sem-lat { color: var(--accent); }
+@keyframes pulseDot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(0.9); }
+}
 
-.table-sparkline { width: 100%; border-collapse: collapse; }
+/* ============================================================
+   TABLE SPARKLINE
+   ============================================================ */
+.table-sparkline {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-base);
+}
 .table-sparkline th {
-    text-align: left; padding: 8px 10px; font-size: 10px;
-    text-transform: uppercase; letter-spacing: 0.5px;
-    color: var(--text-dim); border-bottom: 1px solid var(--border);
+    text-align: left;
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--font-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
     font-weight: 600;
 }
 .table-sparkline td {
-    padding: 6px 10px; border-bottom: 1px solid var(--border-soft);
-    font-size: 12px; vertical-align: middle;
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border);
+    font-size: var(--font-base);
+    color: var(--text-secondary);
+    vertical-align: middle;
 }
-.table-sparkline tr:hover { background: var(--card-hover); cursor: pointer; }
-.table-sparkline tr.down { background: rgba(231,76,60,0.06); }
-body.dark .table-sparkline tr.down { background: rgba(248,81,73,0.08); }
-/* FIX #16: sparkline responsive */
+.table-sparkline tr:last-child td { border-bottom: none; }
+.table-sparkline tr:hover { background: var(--surface-2); cursor: pointer; }
+.table-sparkline tr.down { background: var(--red-soft); }
 .table-sparkline .spark-canvas {
     width: 100%;
     max-width: 140px;
-    height: 28px;
+    height: 26px;
     display: block;
 }
-.table-sparkline .ip { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 12px; }
-.table-sparkline .lat-ok { color: var(--green); font-family: 'JetBrains Mono', monospace; }
-.table-sparkline .lat-bad { color: var(--red); font-family: 'JetBrains Mono', monospace; }
-.table-sparkline .lat-high { color: var(--yellow); font-family: 'JetBrains Mono', monospace; }
+.table-sparkline .ip {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    font-size: var(--font-base);
+    color: var(--text);
+}
+.table-sparkline .lat-ok { color: var(--green); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+.table-sparkline .lat-bad { color: var(--red); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+.table-sparkline .lat-high { color: var(--yellow); font-family: 'JetBrains Mono', monospace; font-weight: 600; }
 
+/* ============================================================
+   ZEN
+   ============================================================ */
 .zen-container {
-    height: calc(100vh - 380px);
+    height: calc(100vh - 300px);
     min-height: 400px;
-    width: 100%; position: relative;
+    width: 100%;
+    position: relative;
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: var(--space-5);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+.zen-container canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
 }
 
+/* ============================================================
+   MODAL
+   ============================================================ */
 .modal {
-    display: none; position: fixed; inset: 0; z-index: 1000;
-    background: rgba(0,0,0,0.6); align-items: center; justify-content: center;
-    padding: 20px;
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(4px);
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-5);
+    animation: fadeIn 0.15s;
+}
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 .modal.active { display: flex; }
 .modal-content {
-    background: var(--card); border-radius: 12px; padding: 24px;
-    max-width: 900px; width: 100%; max-height: 90vh; overflow-y: auto;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
-    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    padding: var(--space-6);
+    max-width: 900px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: var(--shadow-xl);
+    animation: slideUp 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes slideUp {
+    from { transform: translateY(10px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
 }
 .modal-header {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-5);
 }
-.modal-header h3 { font-size: 16px; }
+.modal-header h3 {
+    font-size: var(--font-lg);
+    font-weight: 600;
+    color: var(--text);
+}
 .modal-close {
-    background: none; border: none; font-size: 22px; cursor: pointer;
-    color: var(--text-dim); padding: 4px 8px;
+    background: transparent;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: var(--space-1);
+    border-radius: var(--radius-sm);
+    transition: all 0.15s;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
-.modal-close:hover { color: var(--text); }
+.modal-close:hover {
+    color: var(--text);
+    background: var(--surface-2);
+}
 
+/* ============================================================
+   CHAT
+   ============================================================ */
 .chat-panel {
-    position: fixed; bottom: 20px; right: 20px; width: 360px;
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 12px; box-shadow: var(--shadow-lg);
-    display: flex; flex-direction: column; max-height: 500px;
-    z-index: 500; transition: all 0.2s;
+    position: fixed;
+    bottom: var(--space-5);
+    right: var(--space-5);
+    width: 380px;
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    max-height: 520px;
+    z-index: 500;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
 }
-.chat-panel.collapsed { width: auto; max-height: 48px; }
+.chat-panel.collapsed { width: auto; max-height: 52px; }
 .chat-panel.collapsed .chat-body,
 .chat-panel.collapsed .chat-input-wrap { display: none; }
 .chat-header {
-    padding: 12px 16px; border-bottom: 1px solid var(--border);
-    display: flex; justify-content: space-between; align-items: center;
+    padding: var(--space-4) var(--space-5);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     cursor: pointer;
+    background: var(--accent);
+    color: white;
 }
-.chat-header h4 { font-size: 13px; color: var(--accent); }
+.chat-panel.collapsed .chat-header {
+    border-radius: var(--radius-lg);
+}
+.chat-header:hover { background: var(--accent-hover); }
+.chat-header h4 {
+    font-size: var(--font-base);
+    font-weight: 600;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
 .chat-body {
-    flex: 1; overflow-y: auto; padding: 12px 16px;
-    min-height: 200px; max-height: 320px;
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-4);
+    min-height: 220px;
+    max-height: 340px;
+    background: var(--surface);
 }
-.chat-msg { margin-bottom: 10px; font-size: 13px; }
-.chat-msg.user { color: var(--blue); }
-.chat-msg.altair { color: var(--text); }
-.chat-msg .who { font-weight: 600; font-size: 11px; display: block; margin-bottom: 2px; }
+.chat-msg {
+    margin-bottom: var(--space-4);
+    line-height: 1.5;
+}
+.chat-msg .who {
+    font-weight: 600;
+    font-size: var(--font-xs);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.chat-msg.user .who { color: var(--accent); }
+.chat-msg.altair .who { color: var(--green); }
+.chat-msg.system {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: var(--font-sm);
+}
+.chat-msg .text {
+    color: var(--text);
+    font-size: var(--font-base);
+}
 .chat-input-wrap {
-    padding: 10px 12px; border-top: 1px solid var(--border);
-    display: flex; gap: 8px;
+    padding: var(--space-3);
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: var(--space-2);
+    background: var(--surface);
 }
 .chat-input-wrap input {
-    flex: 1; padding: 8px 12px; border: 1px solid var(--border);
-    border-radius: 8px; font-size: 13px; font-family: inherit;
-    background: var(--bg); color: var(--text);
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-base);
+    font-family: inherit;
+    background: var(--surface);
+    color: var(--text);
+    transition: all 0.15s;
+    height: 36px;
 }
-.chat-input-wrap input:focus { outline: none; border-color: var(--accent); }
+.chat-input-wrap input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
 
-.empty { text-align: center; padding: 40px 20px; color: var(--text-dim); grid-column: 1 / -1; }
-.empty .icon { font-size: 32px; opacity: 0.5; margin-bottom: 10px; }
+/* ============================================================
+   EMPTY
+   ============================================================ */
+.empty {
+    text-align: center;
+    padding: var(--space-7) var(--space-4);
+    color: var(--text-muted);
+    grid-column: 1 / -1;
+    font-size: var(--font-base);
+}
+.empty .icon {
+    font-size: 28px;
+    opacity: 0.4;
+    margin-bottom: var(--space-3);
+}
 
+/* ============================================================
+   VIEWS
+   ============================================================ */
 .view { display: none; }
 .view.active { display: block; }
 
-.history-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-.history-day {
-    padding: 6px 4px; text-align: center; border-radius: 6px;
-    font-size: 10px; background: var(--bg); border: 1px solid var(--border);
+/* ============================================================
+   HISTORY GRID
+   ============================================================ */
+.history-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: var(--space-1);
 }
-.history-day.online { background: rgba(39,174,96,0.15); border-color: var(--green); color: var(--green); }
-.history-day.offline { background: rgba(231,76,60,0.15); border-color: var(--red); color: var(--red); }
-.history-day.partial { background: rgba(243,156,18,0.15); border-color: var(--yellow); color: var(--yellow); }
-.history-day .num { font-weight: 600; font-size: 12px; color: var(--text); }
+.history-day {
+    padding: var(--space-3) var(--space-1);
+    text-align: center;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-xs);
+    background: var(--surface-2);
+    border: 1px solid transparent;
+    transition: all 0.15s;
+}
+.history-day:hover { transform: scale(1.05); z-index: 1; }
+.history-day.online {
+    background: var(--green-soft);
+    color: var(--green);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+.history-day.offline {
+    background: var(--red-soft);
+    color: var(--red);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+.history-day.partial {
+    background: var(--yellow-soft);
+    color: var(--yellow);
+    border-color: rgba(245, 158, 11, 0.3);
+}
+.history-day .num {
+    font-weight: 600;
+    font-size: var(--font-sm);
+    color: var(--text);
+    opacity: 0.9;
+}
 
+/* ============================================================
+   STATUS BAR
+   ============================================================ */
+.status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-6);
+    background: var(--surface);
+    font-size: var(--font-sm);
+    color: var(--text-secondary);
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
+.status-bar .left,
+.status-bar .right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    flex-wrap: wrap;
+}
+.status-bar .item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.status-bar .item .label { color: var(--text-muted); }
+.status-bar .item .val {
+    color: var(--text);
+    font-weight: 600;
+    font-family: 'JetBrains Mono', monospace;
+}
+.status-bar .item .val.ok { color: var(--green); }
+.status-bar .item .val.warn { color: var(--yellow); }
+.status-bar .item .val.err { color: var(--red); }
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
 @media (max-width: 768px) {
-    .container { padding: 12px; }
-    .header { padding: 14px; }
-    .header h1 { font-size: 15px; }
-    .chat-panel { width: calc(100% - 24px); right: 12px; bottom: 12px; }
-    .chart-mode-selector { width: 100%; justify-content: space-between; }
-    .chart-mode-selector button { padding: 6px 8px; font-size: 11px; }
-    .semaforo-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); }
+    .container { padding: var(--space-4); }
+    .header { padding: var(--space-3) var(--space-4); }
+    .header h1 { font-size: var(--font-md); }
+    .chat-panel {
+        width: calc(100% - var(--space-5) * 2);
+        right: var(--space-5);
+        bottom: var(--space-5);
+    }
+    .chart-mode-selector { width: 100%; }
+    .semaforo-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
+    .stat-card .value { font-size: var(--font-xl); }
+    .status-bar { font-size: var(--font-xs); padding: var(--space-2) var(--space-3); }
 }
 </style>
 </head>
@@ -396,69 +1022,83 @@ body.dark .table-sparkline tr.down { background: rgba(248,81,73,0.08); }
 
 <div class="container">
     <header class="header" id="mainHeader">
-        <h1>🌐 Monitor de Red <span id="lastUpdate">cargando...</span></h1>
+        <div class="header-left">
+            <h1><span class="logo">◉</span> Monitor de Red</h1>
+            <div class="meta">
+                <span>uptime <strong id="statUptime" style="color:var(--green);">--</strong></span>
+                <span class="sep">·</span>
+                <span><strong id="statTotal">0</strong> hosts</span>
+                <span class="sep">·</span>
+                <span id="wsStatus">conectado</span>
+                <span class="sep">·</span>
+                <span id="lastUpdate">--</span>
+            </div>
+        </div>
         <div class="header-actions">
-            <span class="dot online" id="wsDot"></span>
-            <span style="font-size:12px;color:var(--text-dim);" id="wsStatus">Conectado</span>
-            <button class="btn-icon" onclick="toggleTheme()" id="themeBtn" title="Cambiar tema">🌙</button>
-            <button class="btn-icon" onclick="refreshAll()" title="Actualizar">🔄</button>
-            <button class="btn-icon" onclick="exportData('excel')" title="Exportar Excel">📊</button>
-            <button class="btn-icon" onclick="exportData('csv')" title="Exportar CSV">📄</button>
-            <button class="btn-icon" onclick="logout()" title="Salir">🚪</button>
+            <button class="btn-icon" onclick="toggleTheme()" id="themeBtn" title="Tema">🌙</button>
+            <button class="btn-icon" onclick="toggleSound()" id="soundBtn" title="Sonido">🔔</button>
+            <button class="btn-icon" onclick="refreshAll()" title="Actualizar">↻</button>
+            <button class="btn-icon" onclick="exportData('excel')" title="Excel">📊</button>
+            <button class="btn-icon" onclick="exportData('csv')" title="CSV">📄</button>
+            <button class="btn-icon" onclick="logout()" title="Salir">⏻</button>
         </div>
     </header>
 
     <div class="stats-grid">
-        <div class="stat-card">
-            <div class="label">Total dispositivos</div>
-            <div class="value blue" id="statTotal">0</div>
+        <div class="stat-card green">
+            <div class="label"><span class="icon">↑</span> Uptime</div>
+            <div class="value" id="statUptimeBig">0%</div>
+            <div class="delta" id="statUptimeDelta">— sin datos</div>
         </div>
-        <div class="stat-card">
-            <div class="label">En línea</div>
-            <div class="value green" id="statOnline">0</div>
+        <div class="stat-card blue">
+            <div class="label"><span class="icon">◉</span> Total hosts</div>
+            <div class="value" id="statTotalBig">0</div>
+            <div class="delta">monitoreados</div>
         </div>
-        <div class="stat-card">
-            <div class="label">Caídos</div>
-            <div class="value red" id="statOffline">0</div>
+        <div class="stat-card red">
+            <div class="label"><span class="icon">↓</span> Caídos</div>
+            <div class="value" id="statOfflineBig">0</div>
+            <div class="delta" id="statOfflineDelta">— todos ok</div>
         </div>
-        <div class="stat-card">
-            <div class="label">Latencia promedio</div>
-            <div class="value yellow" id="statLatency">0ms</div>
+        <div class="stat-card yellow">
+            <div class="label"><span class="icon">~</span> Latencia</div>
+            <div class="value" id="statLatencyBig">0ms</div>
+            <div class="delta" id="statLatencyDelta">— sin datos</div>
         </div>
     </div>
 
     <nav class="nav">
-        <button class="active" data-view="dashboard">📊 Dashboard</button>
-        <button data-view="history">📅 Historial</button>
-        <button data-view="ranking">🏆 Ranking</button>
-        <button data-view="events">📋 Eventos</button>
-        <button data-view="audit">📝 Auditoría</button>
+        <button class="active" data-view="dashboard">Dashboard</button>
+        <button data-view="history">Historial</button>
+        <button data-view="ranking">Ranking</button>
+        <button data-view="events">Eventos</button>
+        <button data-view="audit">Auditoría</button>
     </nav>
 
     <div id="view-dashboard" class="view active">
         <div class="form-row">
             <input type="text" id="ipInput" placeholder="IP (ej: 192.168.1.1)">
             <input type="text" id="nameInput" placeholder="Nombre (opcional)">
-            <button class="btn btn-primary" onclick="addDevice()">➕ Agregar</button>
+            <button class="btn btn-primary" onclick="addDevice()">Agregar</button>
         </div>
 
         <div class="card">
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
-                <div class="card-title" style="margin-bottom:0;">📡 Dispositivos</div>
+            <div class="card-header">
+                <div class="card-title">Dispositivos</div>
                 <button class="btn btn-secondary btn-small" onclick="toggleDevicesTable()" id="toggleDevicesBtn">
-                    🙈 Ocultar tabla
+                    Ocultar tabla
                 </button>
             </div>
             <div id="devicesTableWrapper">
                 <table class="table">
                     <thead>
                         <tr>
-                            <th>Estado</th>
-                            <th>IP</th>
-                            <th>Nombre</th>
-                            <th>Latencia</th>
+                            <th class="sortable" onclick="sortDevices('alive')">Estado <span class="sort-indicator" id="sort-alive"></span></th>
+                            <th class="sortable" onclick="sortDevices('ip')">IP <span class="sort-indicator" id="sort-ip"></span></th>
+                            <th class="sortable" onclick="sortDevices('name')">Nombre <span class="sort-indicator" id="sort-name"></span></th>
+                            <th class="sortable" onclick="sortDevices('latency')">Latencia <span class="sort-indicator" id="sort-latency"></span></th>
                             <th>Proveedor</th>
-                            <th>Última</th>
+                            <th class="sortable" onclick="sortDevices('last_check')">Última <span class="sort-indicator" id="sort-last_check"></span></th>
                             <th></th>
                         </tr>
                     </thead>
@@ -470,27 +1110,29 @@ body.dark .table-sparkline tr.down { background: rgba(248,81,73,0.08); }
         </div>
 
         <div class="card">
-            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-                <div class="card-title" style="margin-bottom:0;">📈 Visualización</div>
+            <div class="card-header">
+                <div class="card-title">Visualización</div>
                 <div class="chart-mode-selector" id="chartModeSelector">
-                    <button data-mode="auto" onclick="setChartMode('auto')">🤖 Auto</button>
-                    <button data-mode="grid" onclick="setChartMode('grid')">📊 Grid</button>
-                    <button data-mode="semaforo" onclick="setChartMode('semaforo')">🚦 Semáforo</button>
-                    <button data-mode="tabla" onclick="setChartMode('tabla')">📋 Tabla</button>
-                    <button data-mode="zen" onclick="setChartMode('zen')">📈 Zen</button>
+                    <button data-mode="auto" onclick="setChartMode('auto')">Auto</button>
+                    <button data-mode="grid" onclick="setChartMode('grid')">Grid</button>
+                    <button data-mode="semaforo" onclick="setChartMode('semaforo')">Semáforo</button>
+                    <button data-mode="tabla" onclick="setChartMode('tabla')">Tabla</button>
+                    <button data-mode="zen" onclick="setChartMode('zen')">Zen</button>
                 </div>
             </div>
             <div id="chartGrid" class="chart-grid">
-                <div class="empty"><div class="icon">📊</div><p>Sin dispositivos</p></div>
+                <div class="empty"><div class="icon">◉</div><p>Sin dispositivos</p></div>
             </div>
         </div>
     </div>
 
     <div id="view-history" class="view">
         <div class="card">
-            <div class="card-title">📅 Historial de disponibilidad</div>
+            <div class="card-header">
+                <div class="card-title">Historial de disponibilidad</div>
+            </div>
             <div style="margin-bottom:16px;">
-                <select id="historySelect" onchange="loadHistory()" style="min-width:220px;padding:9px 14px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;background:var(--bg);color:var(--text);"></select>
+                <select id="historySelect" onchange="loadHistory()" style="padding:9px 14px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px;background:var(--surface);color:var(--text);min-width:240px;height:38px;"></select>
             </div>
             <div id="historyContent"></div>
         </div>
@@ -498,21 +1140,27 @@ body.dark .table-sparkline tr.down { background: rgba(248,81,73,0.08); }
 
     <div id="view-ranking" class="view">
         <div class="card">
-            <div class="card-title">🏆 Ranking por latencia</div>
+            <div class="card-header">
+                <div class="card-title">Ranking por latencia</div>
+            </div>
             <div id="rankingContent"></div>
         </div>
     </div>
 
     <div id="view-events" class="view">
         <div class="card">
-            <div class="card-title">📋 Eventos recientes</div>
+            <div class="card-header">
+                <div class="card-title">Eventos recientes</div>
+            </div>
             <div id="eventsContent"></div>
         </div>
     </div>
 
     <div id="view-audit" class="view">
         <div class="card">
-            <div class="card-title">📝 Auditoría</div>
+            <div class="card-header">
+                <div class="card-title">Auditoría</div>
+            </div>
             <div id="auditContent"></div>
         </div>
     </div>
@@ -530,13 +1178,13 @@ body.dark .table-sparkline tr.down { background: rgba(248,81,73,0.08); }
 
 <div class="chat-panel collapsed" id="chatPanel">
     <div class="chat-header" onclick="toggleChat()">
-        <h4>💬 Altair</h4>
-        <span id="chatToggle" style="color:var(--text-dim);">▲</span>
+        <h4>● Altair</h4>
+        <span id="chatToggle" style="color:white;opacity:0.8;">▲</span>
     </div>
     <div class="chat-body" id="chatBody">
         <div class="chat-msg altair">
             <span class="who">Altair</span>
-            Hola. Pregúntame: estado, caídos, latencia, incidentes, proveedor de [IP], whois de [IP], ayuda.
+            <span class="text">Hola. Pregúntame: estado, caídos, latencia, incidentes, proveedor de [IP], whois de [IP], ayuda.</span>
         </div>
     </div>
     <div class="chat-input-wrap">
@@ -544,6 +1192,33 @@ body.dark .table-sparkline tr.down { background: rgba(248,81,73,0.08); }
         <button class="btn btn-primary btn-small" onclick="sendChat()">Enviar</button>
     </div>
 </div>
+
+<footer class="status-bar">
+    <div class="left">
+        <span class="item">
+            <span class="label">estado</span>
+            <span class="val ok" id="statusWs">● conectado</span>
+        </span>
+        <span class="item">
+            <span class="label">ping</span>
+            <span class="val" id="statusPing">--s</span>
+        </span>
+        <span class="item">
+            <span class="label">historial</span>
+            <span class="val" id="statusHist">--s</span>
+        </span>
+        <span class="item">
+            <span class="label">hosts</span>
+            <span class="val" id="statusHosts">0</span>
+        </span>
+    </div>
+    <div class="right">
+        <span class="item">
+            <span class="label">actualizado</span>
+            <span class="val" id="statusUpdate">--:--:--</span>
+        </span>
+    </div>
+</footer>
 
 <script>
 // ============================================================
@@ -563,11 +1238,10 @@ function applyTheme(theme) {
     setTimeout(updateChartsThemeColors, 100);
 }
 
-// FIX #14 + #15: actualizar colores de línea, tooltip, ejes y grid
 function updateChartsThemeColors() {
-    const gridColor = cssVar('--chart-grid');
-    const textColor = cssVar('--text-dim');
-    const cardColor = cssVar('--card');
+    const gridColor = cssVar('--border');
+    const textColor = cssVar('--text-secondary');
+    const cardColor = cssVar('--surface');
     const borderColor = cssVar('--border');
     const allCharts = [
         ...Object.values(charts),
@@ -577,7 +1251,6 @@ function updateChartsThemeColors() {
     ].filter(Boolean);
     allCharts.forEach(c => {
         if (!c) return;
-        // Ejes
         if (c.options && c.options.scales) {
             ['x', 'y'].forEach(axis => {
                 if (c.options.scales[axis]) {
@@ -586,34 +1259,23 @@ function updateChartsThemeColors() {
                 }
             });
         }
-        // Tooltip
         if (c.options && c.options.plugins && c.options.plugins.tooltip) {
             c.options.plugins.tooltip.backgroundColor = cardColor;
             c.options.plugins.tooltip.titleColor = textColor;
-            c.options.plugins.tooltip.bodyColor = textColor;
+            c.options.plugins.tooltip.bodyColor = cssVar('--text');
             c.options.plugins.tooltip.borderColor = borderColor;
         }
-        // Legend
         if (c.options && c.options.plugins && c.options.plugins.legend && c.options.plugins.legend.labels) {
             c.options.plugins.legend.labels.color = textColor;
         }
-        // Colores de línea (solo para charts de dispositivos)
-        if (c.data && c.data.datasets) {
-            c.data.datasets.forEach(ds => {
-                if (ds.label === 'Latencia (ms)' || ds._isDeviceLine) {
-                    // se actualizarán aparte si es necesario
-                }
-            });
-        }
         c.update('none');
     });
-    // Actualizar colores de línea de cada dispositivo (según estado actual)
     devices.forEach(dev => {
         const chart = charts[dev.ip];
         if (chart && chart.data.datasets[0]) {
             const newColor = lineColor(dev);
             chart.data.datasets[0].borderColor = newColor;
-            chart.data.datasets[0].backgroundColor = hexToRgba(newColor, 0.15);
+            chart.data.datasets[0].backgroundColor = hexToRgba(newColor, 0.12);
             chart.update('none');
         }
     });
@@ -636,12 +1298,64 @@ function toggleTheme() {
 })();
 
 // ============================================================
+// SONIDO
+// ============================================================
+let soundEnabled = localStorage.getItem('soundEnabled') !== 'false';
+
+function toggleSound() {
+    soundEnabled = !soundEnabled;
+    localStorage.setItem('soundEnabled', soundEnabled);
+    updateSoundButton();
+}
+
+function updateSoundButton() {
+    const btn = document.getElementById('soundBtn');
+    if (!btn) return;
+    btn.textContent = soundEnabled ? '🔔' : '🔕';
+    btn.title = soundEnabled ? 'Silenciar alertas' : 'Activar sonido';
+}
+
+function playAlert(type = 'down') {
+    if (!soundEnabled) return;
+    try {
+        const audio = new Audio();
+        audio.src = 'data:audio/wav;base64,UklGRlQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAACAgICAf39/f3x8fHx6enp6eHh4eHZ2dnZ0dHR0cnJycnBwcHBubm5ubGxsbGpqampoaGhoZmZmZmRkZGRiYmJiYGBgYF5eXl5cXFxcWlpaWg==';
+        audio.volume = 0.3;
+        audio.play().catch(() => {});
+    } catch (e) {}
+}
+
+// ============================================================
+// NOTIFICACIONES
+// ============================================================
+function requestNotificationPermission() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+}
+
+function showNotification(title, body, type = 'down') {
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'granted') return;
+    if (document.visibilityState === 'visible') return;
+    const icon = type === 'down' ? '🔴' : '🟢';
+    try {
+        new Notification(`${icon} ${title}`, {
+            body: body,
+            tag: 'monitor-' + title,
+            silent: true
+        });
+    } catch (e) {}
+}
+
+// ============================================================
 // ESTADO
 // ============================================================
 const API = '/api';
 let devices = [];
 let socket;
-let currentView = localStorage.getItem('currentView') || 'dashboard';  // FIX #12
+let currentView = localStorage.getItem('currentView') || 'dashboard';
 const charts = {};
 const sparkCharts = {};
 let zenChartInstance = null;
@@ -651,7 +1365,9 @@ let devicesTableCollapsed = localStorage.getItem('devicesTableCollapsed') === 't
 let lastRenderedMode = null;
 let renderGeneration = 0;
 
-// FIX #23: validar chartMode contra whitelist
+let sortField = localStorage.getItem('sortField') || 'name';
+let sortAsc = localStorage.getItem('sortAsc') !== 'false';
+
 const VALID_MODES = ['auto', 'grid', 'semaforo', 'tabla', 'zen'];
 if (!VALID_MODES.includes(chartMode)) {
     chartMode = 'auto';
@@ -673,19 +1389,19 @@ function cssVar(name) {
 }
 
 function hexToRgba(hex, alpha) {
-    if (!hex) return `rgba(39,174,96,${alpha})`;
+    if (!hex) return `rgba(16, 185, 129, ${alpha})`;
     hex = hex.replace('#', '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
     const r = parseInt(hex.substr(0, 2), 16);
     const g = parseInt(hex.substr(2, 2), 16);
     const b = parseInt(hex.substr(4, 2), 16);
-    return `rgba(${r},${g},${b},${alpha})`;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 function escapeHtml(s) {
     if (s === null || s === undefined) return '';
     return String(s).replace(/[&<>"']/g, c => ({
-        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[c]));
 }
 
@@ -694,33 +1410,29 @@ function logout() {
 }
 
 function lineColor(dev) {
-    if (dev.maintenance) return cssVar('--blue') || '#2980b9';
-    return dev.alive ? (cssVar('--green') || '#27ae60') : (cssVar('--red') || '#e74c3c');
+    if (dev.maintenance) return cssVar('--accent') || '#2563eb';
+    return dev.alive ? (cssVar('--green') || '#10b981') : (cssVar('--red') || '#ef4444');
 }
 
-// FIX #7: "hace Xs"
 function timeAgo(timeStr) {
     if (!timeStr) return '--';
     try {
-        // timeStr es "HH:MM:SS"
         const [h, m, s] = timeStr.split(':').map(Number);
         const now = new Date();
         const then = new Date();
         then.setHours(h, m, s, 0);
-        // Si la hora es "en el futuro" (por cambio de día), restar 1 día
         if (then > now) then.setDate(then.getDate() - 1);
         const diff = Math.floor((now - then) / 1000);
         if (diff < 5) return 'ahora';
-        if (diff < 60) return `hace ${diff}s`;
-        if (diff < 3600) return `hace ${Math.floor(diff / 60)}m`;
-        if (diff < 86400) return `hace ${Math.floor(diff / 3600)}h`;
-        return `hace ${Math.floor(diff / 86400)}d`;
+        if (diff < 60) return `${diff}s`;
+        if (diff < 3600) return `${Math.floor(diff / 60)}m`;
+        if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
+        return `${Math.floor(diff / 86400)}d`;
     } catch (e) {
         return timeStr;
     }
 }
 
-// FIX #18: fetch con manejo de 401
 async function apiFetch(url, opts) {
     const r = await fetch(url, opts);
     if (r.status === 401) {
@@ -728,6 +1440,70 @@ async function apiFetch(url, opts) {
         throw new Error('No autorizado');
     }
     return r;
+}
+
+// ============================================================
+// ORDENAMIENTO
+// ============================================================
+function sortDevices(field) {
+    if (sortField === field) {
+        sortAsc = !sortAsc;
+    } else {
+        sortField = field;
+        sortAsc = true;
+    }
+    localStorage.setItem('sortField', sortField);
+    localStorage.setItem('sortAsc', sortAsc);
+    updateSortIndicators();
+    renderDevices();
+}
+
+function updateSortIndicators() {
+    ['alive', 'ip', 'name', 'latency', 'last_check'].forEach(f => {
+        const el = document.getElementById('sort-' + f);
+        if (!el) return;
+        if (f === sortField) {
+            el.textContent = sortAsc ? '▲' : '▼';
+            el.style.color = 'var(--accent)';
+        } else {
+            el.textContent = '';
+        }
+    });
+}
+
+function getSortedDevices() {
+    const list = [...devices];
+    list.sort((a, b) => {
+        let va, vb;
+        switch (sortField) {
+            case 'alive':
+                va = a.alive ? 1 : 0;
+                vb = b.alive ? 1 : 0;
+                break;
+            case 'ip':
+                va = a.ip.split('.').map(n => n.padStart(3, '0')).join('');
+                vb = b.ip.split('.').map(n => n.padStart(3, '0')).join('');
+                break;
+            case 'name':
+                va = (a.name || '').toLowerCase();
+                vb = (b.name || '').toLowerCase();
+                break;
+            case 'latency':
+                va = a.last_latency ?? 99999;
+                vb = b.last_latency ?? 99999;
+                break;
+            case 'last_check':
+                va = a.last_check || '';
+                vb = b.last_check || '';
+                break;
+            default:
+                va = a.ip; vb = b.ip;
+        }
+        if (va < vb) return sortAsc ? -1 : 1;
+        if (va > vb) return sortAsc ? 1 : -1;
+        return 0;
+    });
+    return list;
 }
 
 // ============================================================
@@ -748,10 +1524,10 @@ function applyDevicesTableState() {
     if (!wrapper || !btn) return;
     if (devicesTableCollapsed) {
         wrapper.style.display = 'none';
-        btn.textContent = '👁️ Mostrar tabla';
+        btn.textContent = 'Mostrar tabla';
     } else {
         wrapper.style.display = '';
-        btn.textContent = '🙈 Ocultar tabla';
+        btn.textContent = 'Ocultar tabla';
     }
 }
 
@@ -762,8 +1538,11 @@ async function init() {
     setupSocket();
     setupNav();
     updateChartModeButtons();
+    updateSoundButton();
+    updateSortIndicators();
     applyDevicesTableState();
-    // FIX #12: restaurar vista
+    requestNotificationPermission();
+
     document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
     const navBtn = document.querySelector(`.nav button[data-view="${currentView}"]`);
     if (navBtn) {
@@ -772,14 +1551,47 @@ async function init() {
         const view = $(`view-${currentView}`);
         if (view) view.classList.add('active');
     }
+
     await loadDevices();
     await refreshStats();
     setInterval(refreshStats, 15000);
+    setInterval(updateStatusBar, 1000);
     updateLastUpdate();
+
+    try {
+        const r = await apiFetch(`${API}/health`);
+        const h = await r.json();
+        $('statusPing').textContent = h.uptime_interval + 's';
+        $('statusHist').textContent = h.history_interval + 's';
+        console.log(`✅ Server OK · ${h.devices} dispositivos · ping cada ${h.uptime_interval}s`);
+    } catch (e) {
+        console.warn('⚠️ No se pudo conectar al server');
+    }
 }
 
 function updateLastUpdate() {
-    $('lastUpdate').textContent = `· ${new Date().toLocaleTimeString()}`;
+    $('lastUpdate').textContent = new Date().toLocaleTimeString();
+}
+
+function updateStatusBar() {
+    const wsEl = $('statusWs');
+    if (wsEl) {
+        if (socket && socket.connected) {
+            wsEl.textContent = '● conectado';
+            wsEl.className = 'val ok';
+        } else {
+            wsEl.textContent = '● desconectado';
+            wsEl.className = 'val err';
+        }
+    }
+    const updateEl = $('statusUpdate');
+    if (updateEl) {
+        updateEl.textContent = new Date().toLocaleTimeString();
+    }
+    const hostsEl = $('statusHosts');
+    if (hostsEl) {
+        hostsEl.textContent = devices.length;
+    }
 }
 
 function setupNav() {
@@ -790,7 +1602,7 @@ function setupNav() {
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
             $('view-' + btn.dataset.view).classList.add('active');
             currentView = btn.dataset.view;
-            localStorage.setItem('currentView', currentView);  // FIX #12
+            localStorage.setItem('currentView', currentView);
             if (currentView === 'history') loadHistorySelector();
             if (currentView === 'ranking') loadRanking();
             if (currentView === 'events') loadEvents();
@@ -799,6 +1611,7 @@ function setupNav() {
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
                         Object.values(charts).forEach(c => c && c.resize());
+                        if (zenChartInstance) zenChartInstance.resize();
                         recalculateChartHeights();
                     });
                 });
@@ -847,21 +1660,33 @@ function updateChartModeButtons() {
 function setupSocket() {
     socket = io();
     socket.on('connect', () => {
-        $('wsStatus').textContent = 'Conectado';
-        $('wsDot').className = 'dot online';
+        $('wsStatus').textContent = 'conectado';
+        $('wsStatus').style.color = 'var(--green)';
     });
     socket.on('disconnect', () => {
-        $('wsStatus').textContent = 'Desconectado';
-        $('wsDot').className = 'dot offline';
+        $('wsStatus').textContent = 'desconectado';
+        $('wsStatus').style.color = 'var(--red)';
     });
     socket.on('device_update', (data) => {
         const dev = devices.find(d => d.ip === data.ip);
         if (dev) {
+            const wasAlive = dev.alive;
             dev.alive = data.alive;
             dev.last_latency = data.last_latency;
             dev.last_check = data.last_check;
             updateDeviceRow(dev);
             updateDeviceChart(dev);
+            if (zenChartInstance) updateZenChartData();
+
+            if (wasAlive !== undefined && wasAlive !== data.alive) {
+                if (data.alive) {
+                    showNotification(dev.name, `Recuperado (${data.last_latency}ms)`, 'up');
+                    playAlert('up');
+                } else {
+                    showNotification(dev.name, `Caído (${dev.ip})`, 'down');
+                    playAlert('down');
+                }
+            }
         }
         refreshStats();
         updateLastUpdate();
@@ -882,10 +1707,8 @@ async function loadDevices() {
     try {
         const r = await apiFetch(`${API}/devices`);
         devices = await r.json();
-        // FIX #9: actualizar botones antes de render
         updateChartModeButtons();
         renderDevices();
-        // FIX #11: si el modo Auto cambió, marcar el cambio
         const activeMode = getActiveMode();
         if (chartMode === 'auto' && lastRenderedMode !== activeMode) {
             lastRenderedMode = activeMode;
@@ -900,23 +1723,23 @@ async function loadDevices() {
 function renderDevices() {
     const tbody = $('deviceTable');
     if (!devices.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="empty"><div class="icon">📡</div><p>Sin dispositivos. Agrega una IP.</p></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">Sin dispositivos. Agrega una IP.</td></tr>';
         return;
     }
     let html = '';
-    devices.forEach(d => {
+    getSortedDevices().forEach(d => {
         const alive = d.alive;
         const maint = d.maintenance;
         const dotClass = maint ? 'maintenance' : (alive ? 'online' : 'offline');
         const dotTitle = maint ? 'Mantenimiento' : (alive ? 'En línea' : 'Caído');
         const latClass = !alive ? 'latency-bad' : (isHighLatency(d) ? 'latency-high' : 'latency-ok');
         html += `<tr class="${alive ? '' : 'down'}" data-ip="${d.ip}">
-            <td><span class="dot ${dotClass}" title="${dotTitle}"></span>${maint ? 'Mant.' : (alive ? 'OK' : 'Caído')}</td>
+            <td><span class="dot ${dotClass}" title="${dotTitle}"></span>${maint ? 'MANT' : (alive ? 'OK' : 'DOWN')}</td>
             <td class="ip">${d.ip}</td>
             <td>${escapeHtml(d.name)}</td>
             <td class="${latClass}">${fmt(d.last_latency, 'ms')}</td>
-            <td style="color:var(--text-dim);font-size:12px;">${escapeHtml(d.provider || '--')}</td>
-            <td style="color:var(--text-dim);font-size:12px;" title="${d.last_check || '--'}">${timeAgo(d.last_check)}</td>
+            <td style="font-size:12px;">${escapeHtml(d.provider || '--')}</td>
+            <td style="font-size:12px;font-family:'JetBrains Mono',monospace;" title="${d.last_check || '--'}">${timeAgo(d.last_check)}</td>
             <td style="white-space:nowrap;">
                 <button class="btn btn-secondary btn-small" onclick="editDevice('${d.ip}')" title="Editar">✏️</button>
                 <button class="btn btn-secondary btn-small" onclick="toggleMaintenance('${d.ip}', ${maint})" title="Mantenimiento">${maint ? '🔧' : '🔨'}</button>
@@ -937,10 +1760,11 @@ function updateDeviceRow(dev) {
     tr.classList.toggle('down', !alive);
     const cells = tr.querySelectorAll('td');
     if (cells.length >= 6) {
-        cells[0].innerHTML = `<span class="dot ${dotClass}"></span>${maint ? 'Mant.' : (alive ? 'OK' : 'Caído')}`;
+        cells[0].innerHTML = `<span class="dot ${dotClass}"></span>${maint ? 'MANT' : (alive ? 'OK' : 'DOWN')}`;
         cells[3].className = latClass;
         cells[3].textContent = fmt(dev.last_latency, 'ms');
         cells[5].textContent = timeAgo(dev.last_check);
+        cells[5].title = dev.last_check || '--';
     }
 }
 
@@ -948,7 +1772,6 @@ async function addDevice() {
     const ip = $('ipInput').value.trim();
     const name = $('nameInput').value.trim() || ip;
     if (!ip) return alert('Escribe una IP');
-    // FIX #16: validar formato en el cliente también
     if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
         return alert('Formato de IP inválido (ej: 192.168.1.1)');
     }
@@ -1002,16 +1825,44 @@ async function refreshStats() {
     try {
         const r = await apiFetch(`${API}/stats`);
         const s = await r.json();
+        $('statUptime').textContent = s.uptime + '%';
         $('statTotal').textContent = s.total;
-        $('statOnline').textContent = s.online;
-        $('statOffline').textContent = s.offline;
-        $('statLatency').textContent = s.avg_latency ? s.avg_latency + 'ms' : '--';
+
+        const uptimeEl = $('statUptimeBig');
+        if (uptimeEl) uptimeEl.textContent = s.uptime + '%';
+        const totalEl = $('statTotalBig');
+        if (totalEl) totalEl.textContent = s.total;
+        const offEl = $('statOfflineBig');
+        if (offEl) offEl.textContent = s.offline;
+        const latEl = $('statLatencyBig');
+        if (latEl) latEl.textContent = (s.avg_latency || 0) + 'ms';
+
+        const deltaUptime = $('statUptimeDelta');
+        if (deltaUptime) {
+            deltaUptime.textContent = s.uptime >= 99 ? '✓ red estable'
+                : s.uptime >= 90 ? '⚠ revisar'
+                : '✗ crítico';
+            deltaUptime.style.color = s.uptime >= 99 ? 'var(--green)'
+                : s.uptime >= 90 ? 'var(--yellow)'
+                : 'var(--red)';
+        }
+        const deltaOff = $('statOfflineDelta');
+        if (deltaOff) {
+            deltaOff.textContent = s.offline === 0 ? '✓ todos ok' : `⚠ ${s.offline} sin responder`;
+            deltaOff.style.color = s.offline === 0 ? 'var(--green)' : 'var(--red)';
+        }
+        const deltaLat = $('statLatencyDelta');
+        if (deltaLat) {
+            deltaLat.textContent = s.min_latency && s.max_latency
+                ? `${s.min_latency}ms — ${s.max_latency}ms`
+                : '— sin datos';
+        }
+
         updateLastUpdate();
-        // FIX #20 + #24: título y borde según caídos
         const header = $('mainHeader');
         if (s.offline > 0) {
             header.classList.add('has-down');
-            document.title = `🔴 ${s.offline} caído${s.offline > 1 ? 's' : ''} - Monitor de Red`;
+            document.title = `🔴 ${s.offline} caído${s.offline > 1 ? 's' : ''} - Monitor`;
         } else {
             header.classList.remove('has-down');
             document.title = 'Monitor de Red';
@@ -1028,12 +1879,11 @@ function refreshAll() {
 // OPTIONS DE CHART
 // ============================================================
 function makeChartOptions(opts = {}) {
-    const gridColor = cssVar('--chart-grid') || 'rgba(0,0,0,0.05)';
-    const textColor = cssVar('--text-dim') || '#7f8c8d';
-    const cardColor = cssVar('--card') || '#fff';
-    const borderColor = cssVar('--border') || '#ddd';
+    const gridColor = cssVar('--border') || '#e2e8f0';
+    const textColor = cssVar('--text-secondary') || '#64748b';
+    const cardColor = cssVar('--surface') || '#ffffff';
+    const borderColor = cssVar('--border') || '#e2e8f0';
     const showAxes = opts.showAxes !== false;
-    // FIX #8: modo Zen usa nearest en vez de index
     const interactionMode = opts.zenMode ? 'nearest' : 'index';
     const intersect = opts.zenMode ? true : false;
     return {
@@ -1050,28 +1900,33 @@ function makeChartOptions(opts = {}) {
                 display: !!opts.showLegend,
                 labels: {
                     color: textColor,
-                    font: { size: 10, family: 'Inter' },
-                    boxWidth: 10,
-                    padding: 6
+                    font: { size: 11, family: 'Inter' },
+                    boxWidth: 12,
+                    padding: 8,
+                    usePointStyle: true,
+                    pointStyle: 'line'
                 }
             },
             tooltip: {
                 position: 'nearest',
                 backgroundColor: cardColor,
-                titleColor: textColor,
-                bodyColor: textColor,
+                titleColor: cssVar('--text'),
+                bodyColor: cssVar('--text'),
                 borderColor: borderColor,
                 borderWidth: 1,
-                padding: 8,
+                padding: 10,
                 displayColors: !!opts.showLegend,
-                caretSize: 4,
-                caretPadding: 6,
+                caretSize: 5,
+                caretPadding: 8,
+                cornerRadius: 6,
+                titleFont: { family: 'Inter', size: 11, weight: '600' },
+                bodyFont: { family: 'JetBrains Mono', size: 11 },
                 callbacks: {
                     label: ctx => {
-                        if (ctx.dataset.label === 'Caído') return '🔴 Caído';
-                        if (ctx.parsed.y === null || ctx.parsed.y === undefined) return '🔴 Sin respuesta';
+                        if (ctx.dataset.label === 'Caído') return 'Caído';
+                        if (ctx.parsed.y === null || ctx.parsed.y === undefined) return 'Sin respuesta';
                         if (opts.showLegend) return `${ctx.dataset.label}: ${ctx.parsed.y}ms`;
-                        return `Latencia: ${ctx.parsed.y}ms`;
+                        return `${ctx.parsed.y}ms`;
                     }
                 }
             }
@@ -1080,9 +1935,10 @@ function makeChartOptions(opts = {}) {
             x: {
                 display: showAxes,
                 grid: { display: false },
+                border: { display: false },
                 ticks: {
                     color: textColor,
-                    font: { size: 9, family: 'Inter' },
+                    font: { size: 10, family: 'Inter' },
                     maxTicksLimit: opts.maxXTicks || 5,
                     maxRotation: 0
                 }
@@ -1091,25 +1947,27 @@ function makeChartOptions(opts = {}) {
                 display: showAxes,
                 beginAtZero: true,
                 suggestedMin: -2,
-                grid: { color: gridColor },
+                grid: { color: gridColor, drawTicks: false },
+                border: { display: false },
                 ticks: {
                     color: textColor,
-                    font: { size: 9, family: 'Inter' },
+                    font: { size: 10, family: 'Inter' },
                     maxTicksLimit: opts.maxYTicks || 4,
+                    padding: 6,
                     callback: v => v + 'ms'
                 }
             }
         },
         animation: false,
         elements: {
-            line: { tension: 0.3, borderWidth: 2 },
-            point: { radius: 0, hoverRadius: 4 }
+            line: { tension: 0.35, borderWidth: 2 },
+            point: { radius: 0, hoverRadius: 5 }
         }
     };
 }
 
 // ============================================================
-// CÁLCULO DE ALTURA Y COLUMNAS
+// GRID / ALTURAS
 // ============================================================
 function getGridColumns(count) {
     const w = window.innerWidth;
@@ -1129,24 +1987,22 @@ function getGridColumns(count) {
     return 6;
 }
 
-// FIX #12: medir chrome correctamente incluso si está oculto
 function measureElement(el, fallback) {
     if (!el) return fallback;
     const rect = el.getBoundingClientRect();
     if (rect.height > 0) return rect.height;
-    // Si está oculto, no podemos medir; usar fallback
     return fallback;
 }
 
 function calculateChartHeight(count) {
     const cols = getGridColumns(count);
     const rows = Math.ceil(count / cols);
-    const gridGap = 12;
-    const chartHead = 28;
+    const gridGap = 16;
+    const chartHead = 30;
     const chartPad = 24;
 
-    const headerH = measureElement(document.querySelector('.header'), 70);
-    const statsH = measureElement(document.querySelector('.stats-grid'), 100);
+    const headerH = measureElement(document.querySelector('.header'), 60);
+    const statsH = measureElement(document.querySelector('.stats-grid'), 120);
     const navH = measureElement(document.querySelector('.nav'), 50);
     const formH = measureElement(document.querySelector('.form-row'), 60);
     let tableCardH;
@@ -1155,16 +2011,16 @@ function calculateChartHeight(count) {
     } else {
         const wrapper = document.querySelector('#devicesTableWrapper');
         const measured = measureElement(wrapper, 300);
-        tableCardH = measured + 80;
+        tableCardH = measured + 100;
     }
-    const paddings = 80;
+    const paddings = 100;
 
     const chromeHeight = headerH + statsH + navH + formH + tableCardH + paddings;
     const availableHeight = Math.max(300, window.innerHeight - chromeHeight);
     const totalGaps = (rows - 1) * gridGap;
     const perRow = (availableHeight - totalGaps) / rows;
     let chartHeight = Math.floor(perRow - chartHead - chartPad);
-    return Math.max(100, Math.min(300, chartHeight));
+    return Math.max(120, Math.min(320, chartHeight));
 }
 
 function recalculateChartHeights() {
@@ -1197,7 +2053,7 @@ async function renderCharts() {
     container.style.gridTemplateColumns = '';
 
     if (!devices.length) {
-        container.innerHTML = '<div class="empty"><div class="icon">📊</div><p>Sin dispositivos</p></div>';
+        container.innerHTML = '<div class="empty"><div class="icon">◉</div><p>Sin dispositivos</p></div>';
         return;
     }
 
@@ -1245,7 +2101,7 @@ async function renderGridMode(container, list, myGen) {
                         <span class="ip">${dev.ip}</span>
                     </div>
                     <span class="status ${dev.maintenance ? 'maintenance' : (dev.alive ? 'online' : 'offline')}">
-                        ${dev.maintenance ? 'Mant.' : (dev.alive ? 'En línea' : 'Caído')}
+                        ${dev.maintenance ? 'MANT' : (dev.alive ? 'OK' : 'DOWN')}
                     </span>
                 </div>
                 <div class="chart-container" style="height: ${chartHeight}px;">
@@ -1272,7 +2128,6 @@ async function createGridChart(dev, myGen) {
         history = await r.json();
     } catch (e) { return; }
 
-    // FIX #11: chequear myGen después del fetch
     if (myGen !== undefined && myGen !== renderGeneration) return;
     if (!document.getElementById(`chart-${safeId}`)) return;
 
@@ -1280,7 +2135,7 @@ async function createGridChart(dev, myGen) {
     const data = history.map(h => h.alive ? h.latency : null);
     const downPoints = history.map(h => h.alive ? null : 0);
     const color = lineColor(dev);
-    const deadColor = cssVar('--red') || '#e74c3c';
+    const deadColor = cssVar('--red') || '#ef4444';
 
     try { if (charts[dev.ip]) charts[dev.ip].destroy(); } catch(e) {}
     charts[dev.ip] = new Chart(canvas, {
@@ -1291,11 +2146,11 @@ async function createGridChart(dev, myGen) {
                 {
                     data,
                     borderColor: color,
-                    backgroundColor: hexToRgba(color, 0.15),
-                    borderWidth: 1.5,
+                    backgroundColor: hexToRgba(color, 0.1),
+                    borderWidth: 2,
                     pointRadius: 0,
-                    pointHoverRadius: 4,
-                    tension: 0.3,
+                    pointHoverRadius: 5,
+                    tension: 0.35,
                     fill: true,
                     spanGaps: false
                 },
@@ -1320,7 +2175,7 @@ function updateDeviceChart(dev) {
     if (!chart) return;
     const color = lineColor(dev);
     chart.data.datasets[0].borderColor = color;
-    chart.data.datasets[0].backgroundColor = hexToRgba(color, 0.15);
+    chart.data.datasets[0].backgroundColor = hexToRgba(color, 0.1);
     chart.update('none');
     const box = document.querySelector(`.chart-box[data-chart-ip="${dev.ip}"]`);
     if (box) {
@@ -1328,7 +2183,7 @@ function updateDeviceChart(dev) {
         const badge = box.querySelector('.status');
         if (badge) {
             badge.className = `status ${dev.maintenance ? 'maintenance' : (dev.alive ? 'online' : 'offline')}`;
-            badge.textContent = dev.maintenance ? 'Mant.' : (dev.alive ? 'En línea' : 'Caído');
+            badge.textContent = dev.maintenance ? 'MANT' : (dev.alive ? 'OK' : 'DOWN');
         }
     }
 }
@@ -1342,8 +2197,8 @@ async function renderSemaforoMode(container, list, myGen) {
     list.forEach(dev => {
         let cls = 'online';
         let latText = fmt(dev.last_latency, 'ms');
-        if (dev.maintenance) { cls = 'maintenance'; latText = '🔧'; }
-        else if (!dev.alive) { cls = 'offline'; latText = 'CAÍDO'; }
+        if (dev.maintenance) { cls = 'maintenance'; latText = 'MANT'; }
+        else if (!dev.alive) { cls = 'offline'; latText = 'DOWN'; }
         else if (isHighLatency(dev)) { cls = 'high'; }
         html += `
             <div class="semaforo-item ${cls}" data-ip="${dev.ip}" title="${escapeHtml(dev.name)} - ${dev.ip}">
@@ -1381,7 +2236,7 @@ async function renderTablaMode(container, list, myGen) {
         const safeId = dev.ip.replace(/\./g, '_');
         html += `
             <tr data-ip="${dev.ip}" class="${alive ? '' : 'down'}">
-                <td><span class="dot ${dotClass}"></span>${maint ? 'Mant.' : (alive ? 'OK' : 'Caído')}</td>
+                <td><span class="dot ${dotClass}"></span>${maint ? 'MANT' : (alive ? 'OK' : 'DOWN')}</td>
                 <td>${escapeHtml(dev.name)}</td>
                 <td class="ip">${dev.ip}</td>
                 <td class="${latClass}">${fmt(dev.last_latency, 'ms')}</td>
@@ -1425,9 +2280,9 @@ async function renderSparkline(dev, myGen) {
             datasets: [{
                 data,
                 borderColor: color,
-                borderWidth: 1.5,
+                borderWidth: 2,
                 pointRadius: 0,
-                tension: 0.3,
+                tension: 0.35,
                 fill: false,
                 spanGaps: false
             }]
@@ -1445,26 +2300,33 @@ async function renderSparkline(dev, myGen) {
         const pct = history.length ? Math.round(onlineCount / history.length * 100) : 0;
         uptimeEl.textContent = pct + '%';
         uptimeEl.style.color = pct === 100 ? 'var(--green)' : (pct >= 90 ? 'var(--yellow)' : 'var(--red)');
+        uptimeEl.style.fontFamily = 'JetBrains Mono, monospace';
     }
 }
 
 // ============================================================
 // MODO 4: ZEN
 // ============================================================
+let zenData = { labels: [], datasets: [] };
+
 async function renderZenMode(container, list, myGen) {
     container.className = '';
+    container.style.gridTemplateColumns = '';
     container.innerHTML = `
-        <div class="zen-container">
+        <div class="zen-container" id="zenContainer">
             <canvas id="zenChart"></canvas>
         </div>
     `;
-    const palette = generatePalette(list.length);
-    const datasets = [];
-    let allLabels = null;
+
     const histories = await Promise.all(list.map(d =>
         apiFetch(`${API}/history/${d.ip}?hours=1`).then(r => r.json()).catch(() => [])
     ));
     if (myGen !== renderGeneration) return;
+
+    const palette = generatePalette(list.length);
+    const datasets = [];
+    let allLabels = null;
+
     list.forEach((dev, idx) => {
         const history = histories[idx];
         if (!history.length) return;
@@ -1474,37 +2336,124 @@ async function renderZenMode(container, list, myGen) {
             data: history.map(h => h.alive ? h.latency : null),
             borderColor: palette[idx],
             backgroundColor: 'transparent',
-            borderWidth: 1.5,
+            borderWidth: 2,
             pointRadius: 0,
-            pointHoverRadius: 4,
-            tension: 0.3,
+            pointHoverRadius: 5,
+            tension: 0.35,
             spanGaps: false
         });
     });
+
     if (!datasets.length) {
         container.innerHTML = '<div class="empty">Sin datos para mostrar</div>';
         return;
     }
+
+    zenData = { labels: allLabels, datasets };
+
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (myGen !== renderGeneration) return;
+
+    const canvas = document.getElementById('zenChart');
+    const wrapper = document.getElementById('zenContainer');
+    if (!canvas || !wrapper) return;
+
+    const w = wrapper.clientWidth - 40;
+    const h = wrapper.clientHeight - 40;
+    if (w <= 0 || h <= 0) return;
+
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+
     try { if (zenChartInstance) zenChartInstance.destroy(); } catch(e) {}
-    zenChartInstance = new Chart(document.getElementById('zenChart'), {
+    zenChartInstance = new Chart(canvas, {
         type: 'line',
-        data: { labels: allLabels, datasets },
-        options: makeChartOptions({
-            showLegend: true,
-            showAxes: true,
-            maxXTicks: 10,
-            maxYTicks: 6,
-            zenMode: true  // FIX #8: modo nearest
-        })
+        data: { labels: zenData.labels, datasets: zenData.datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            resizeDelay: 100,
+            interaction: { mode: 'nearest', intersect: true, axis: 'x' },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        color: cssVar('--text-secondary'),
+                        font: { size: 11, family: 'Inter' },
+                        boxWidth: 12,
+                        padding: 8,
+                        usePointStyle: true,
+                        pointStyle: 'line'
+                    }
+                },
+                tooltip: {
+                    position: 'nearest',
+                    backgroundColor: cssVar('--surface'),
+                    titleColor: cssVar('--text'),
+                    bodyColor: cssVar('--text'),
+                    borderColor: cssVar('--border'),
+                    borderWidth: 1,
+                    padding: 10,
+                    cornerRadius: 6,
+                    titleFont: { family: 'Inter', size: 11, weight: '600' },
+                    bodyFont: { family: 'JetBrains Mono', size: 11 }
+                }
+            },
+            scales: {
+                x: {
+                    display: true,
+                    grid: { display: false },
+                    border: { display: false },
+                    ticks: {
+                        color: cssVar('--text-secondary'),
+                        font: { size: 10, family: 'Inter' },
+                        maxTicksLimit: 10,
+                        maxRotation: 0
+                    }
+                },
+                y: {
+                    display: true,
+                    beginAtZero: true,
+                    suggestedMin: -2,
+                    grid: { color: cssVar('--border'), drawTicks: false },
+                    border: { display: false },
+                    ticks: {
+                        color: cssVar('--text-secondary'),
+                        font: { size: 10, family: 'Inter' },
+                        maxTicksLimit: 6,
+                        padding: 6,
+                        callback: v => v + 'ms'
+                    }
+                }
+            },
+            animation: false,
+            elements: {
+                line: { tension: 0.35, borderWidth: 2 },
+                point: { radius: 0, hoverRadius: 5 }
+            }
+        }
     });
 }
 
+function updateZenChartData() {
+    if (!zenChartInstance || !zenData.labels.length) return;
+    zenChartInstance.update('none');
+}
+
 function generatePalette(n) {
+    // Paleta moderna con buen contraste
     const base = [
-        '#3fb950', '#58a6ff', '#f85149', '#e3b341', '#a371f7',
-        '#db61a2', '#39c5cf', '#ff8c42', '#79c0ff', '#ffa657',
-        '#7ee787', '#ff7b72', '#d2a8ff', '#f778ba', '#56d364',
-        '#bc8cff', '#ffab70', '#76e3ea', '#ffd866', '#ff9bce'
+        '#2563eb', // azul
+        '#10b981', // verde
+        '#f59e0b', // amarillo
+        '#ef4444', // rojo
+        '#8b5cf6', // violeta
+        '#ec4899', // rosa
+        '#06b6d4', // cyan
+        '#84cc16'  // lima
     ];
     const out = [];
     for (let i = 0; i < n; i++) out.push(base[i % base.length]);
@@ -1517,7 +2466,7 @@ function generatePalette(n) {
 async function openDeviceModal(ip) {
     const dev = devices.find(d => d.ip === ip);
     if (!dev) return;
-    $('modalTitle').textContent = `📈 ${dev.name} (${dev.ip})`;
+    $('modalTitle').textContent = `${dev.name} · ${dev.ip}`;
     $('modalBody').innerHTML = '<div class="empty">Cargando historial...</div>';
     $('deviceModal').classList.add('active');
     try {
@@ -1530,20 +2479,20 @@ async function openDeviceModal(ip) {
         const data = history.map(h => h.alive ? h.latency : null);
         const downPoints = history.map(h => h.alive ? null : 0);
         $('modalBody').innerHTML = `
-            <div style="height:340px;margin-bottom:16px;position:relative;">
+            <div style="height:340px;margin-bottom:20px;position:relative;">
                 <canvas id="modalChart"></canvas>
             </div>
-            <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--text-dim);">
+            <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--text-secondary);">
                 <span>IP: <strong style="color:var(--text);">${dev.ip}</strong></span>
-                <span>Proveedor: <strong style="color:var(--text);">${dev.provider || '--'}</strong></span>
+                <span>ISP: <strong style="color:var(--text);">${dev.provider || '--'}</strong></span>
                 <span>Umbral: <strong style="color:var(--text);">${dev.threshold}ms</strong></span>
                 <span>Estado: <strong style="color:${dev.alive ? 'var(--green)' : 'var(--red)'};">${dev.alive ? 'En línea' : 'Caído'}</strong></span>
             </div>
-            ${dev.comments ? `<p style="margin-top:12px;color:var(--text-dim);font-size:13px;">💬 ${escapeHtml(dev.comments)}</p>` : ''}
+            ${dev.comments ? `<p style="margin-top:14px;color:var(--text-muted);font-size:13px;">💬 ${escapeHtml(dev.comments)}</p>` : ''}
         `;
         try { if (modalChartInstance) modalChartInstance.destroy(); } catch(e) {}
         const color = lineColor(dev);
-        const deadColor = cssVar('--red') || '#e74c3c';
+        const deadColor = cssVar('--red') || '#ef4444';
         modalChartInstance = new Chart(document.getElementById('modalChart'), {
             type: 'line',
             data: {
@@ -1553,11 +2502,11 @@ async function openDeviceModal(ip) {
                         label: 'Latencia (ms)',
                         data,
                         borderColor: color,
-                        backgroundColor: hexToRgba(color, 0.12),
+                        backgroundColor: hexToRgba(color, 0.1),
                         borderWidth: 2,
-                        pointRadius: 1,
-                        pointHoverRadius: 5,
-                        tension: 0.3,
+                        pointRadius: 2,
+                        pointHoverRadius: 6,
+                        tension: 0.35,
                         fill: true,
                         spanGaps: false
                     },
@@ -1566,8 +2515,8 @@ async function openDeviceModal(ip) {
                         data: downPoints,
                         borderColor: 'transparent',
                         backgroundColor: deadColor,
-                        pointRadius: 4,
-                        pointHoverRadius: 7,
+                        pointRadius: 5,
+                        pointHoverRadius: 8,
                         pointStyle: 'crossRot',
                         showLine: false,
                         spanGaps: false
@@ -1576,6 +2525,27 @@ async function openDeviceModal(ip) {
             },
             options: makeChartOptions({ showAxes: true, maxXTicks: 12, maxYTicks: 6 })
         });
+
+        try {
+            const evRes = await apiFetch(`${API}/events?limit=200&ip=${ip}&type=DOWN`);
+            const downs = await evRes.json();
+            if (downs.length) {
+                const downsHtml = `
+                    <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border);">
+                        <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.05em;">
+                            Últimas caídas
+                        </div>
+                        ${downs.slice(0, 5).map(e => `
+                            <div style="font-size:12px;color:var(--text-secondary);padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:12px;font-family:'JetBrains Mono',monospace;">
+                                <span>${e.timestamp.slice(0, 19).replace('T', ' ')}</span>
+                                <span style="color:var(--text-muted);">${escapeHtml(e.details || '')}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                $('modalBody').insertAdjacentHTML('beforeend', downsHtml);
+            }
+        } catch (e) {}
     } catch (e) {
         $('modalBody').innerHTML = '<div class="empty">Error cargando datos</div>';
     }
@@ -1583,7 +2553,6 @@ async function openDeviceModal(ip) {
 
 function closeModal() {
     $('deviceModal').classList.remove('active');
-    // FIX #13: limpiar título
     $('modalTitle').textContent = 'Dispositivo';
     if (modalChartInstance) {
         try { modalChartInstance.destroy(); } catch(e) {}
@@ -1593,6 +2562,7 @@ function closeModal() {
         requestAnimationFrame(() => {
             Object.values(charts).forEach(c => c && c.resize());
             Object.values(sparkCharts).forEach(c => c && c.resize());
+            if (zenChartInstance) zenChartInstance.resize();
         });
     });
 }
@@ -1631,10 +2601,10 @@ async function loadHistory() {
     const today = new Date();
     const start = new Date(today);
     start.setDate(start.getDate() - days + 1);
-    let html = `<div style="text-align:center;margin-bottom:12px;color:var(--text-dim);font-size:13px;">
-        <strong style="color:var(--text);">${escapeHtml(dev.name)}</strong> · Últimos ${days} días
+    let html = `<div style="text-align:center;margin-bottom:16px;color:var(--text-secondary);font-size:13px;">
+        <strong style="color:var(--text);">${escapeHtml(dev.name)}</strong> · últimos ${days} días
     </div>
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;font-size:10px;color:var(--text-dim);text-align:center;margin-bottom:5px;">
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;font-size:11px;color:var(--text-secondary);text-align:center;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">
         <span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span>
     </div>
     <div class="history-grid">`;
@@ -1677,12 +2647,12 @@ async function loadRanking() {
                 ? `${d.min_latency}/${d.max_latency}ms`
                 : '--';
             html += `<tr>
-                <td>${i + 1}</td>
+                <td style="font-family:'JetBrains Mono',monospace;color:var(--text-muted);font-weight:600;">${String(i + 1).padStart(2, '0')}</td>
                 <td>${escapeHtml(d.name)}</td>
                 <td class="ip">${d.ip}</td>
                 <td class="latency-ok">${avg}</td>
-                <td>${range}</td>
-                <td>${d.uptime_7d}%</td>
+                <td style="font-family:'JetBrains Mono',monospace;">${range}</td>
+                <td style="font-family:'JetBrains Mono',monospace;">${d.uptime_7d}%</td>
             </tr>`;
         });
         html += '</tbody></table>';
@@ -1706,12 +2676,12 @@ async function loadEvents() {
         events.forEach(e => {
             const color = e.event_type === 'DOWN' ? 'var(--red)' :
                           e.event_type === 'UP' ? 'var(--green)' :
-                          e.event_type === 'HIGH_LATENCY' ? 'var(--yellow)' : 'var(--text-dim)';
+                          e.event_type === 'HIGH_LATENCY' ? 'var(--yellow)' : 'var(--text-secondary)';
             html += `<tr>
-                <td style="font-size:12px;font-family:'JetBrains Mono',monospace;">${e.timestamp.slice(0, 19).replace('T', ' ')}</td>
+                <td style="font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);">${e.timestamp.slice(0, 19).replace('T', ' ')}</td>
                 <td>${escapeHtml(e.device_name || e.device_ip || '--')}</td>
-                <td style="color:${color};font-weight:600;">${e.event_type}</td>
-                <td style="color:var(--text-dim);font-size:12px;">${escapeHtml(e.details || '')}</td>
+                <td style="color:${color};font-weight:600;font-family:'JetBrains Mono',monospace;font-size:12px;">${e.event_type}</td>
+                <td style="color:var(--text-secondary);font-size:12px;">${escapeHtml(e.details || '')}</td>
             </tr>`;
         });
         html += '</tbody></table>';
@@ -1732,10 +2702,10 @@ async function loadAudit() {
         let html = '<table class="table"><thead><tr><th>Hora</th><th>IP</th><th>Acción</th><th>Detalles</th></tr></thead><tbody>';
         rows.forEach(a => {
             html += `<tr>
-                <td style="font-size:12px;font-family:'JetBrains Mono',monospace;">${a.timestamp.slice(0, 19).replace('T', ' ')}</td>
+                <td style="font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--text-muted);">${a.timestamp.slice(0, 19).replace('T', ' ')}</td>
                 <td class="ip">${a.user_ip || '--'}</td>
-                <td style="font-weight:600;">${escapeHtml(a.action)}</td>
-                <td style="color:var(--text-dim);font-size:12px;">${escapeHtml(a.details || '')}</td>
+                <td style="font-weight:600;font-size:12px;">${escapeHtml(a.action)}</td>
+                <td style="color:var(--text-secondary);font-size:12px;">${escapeHtml(a.details || '')}</td>
             </tr>`;
         });
         html += '</tbody></table>';
@@ -1764,7 +2734,6 @@ function sendChat() {
     const input = $('chatInput');
     const q = input.value.trim();
     if (!q) return;
-    // FIX #29: validar que socket esté conectado
     if (!socket || !socket.connected) {
         addChat('Sistema', '⚠️ Sin conexión al servidor');
         return;
@@ -1776,10 +2745,12 @@ function sendChat() {
 
 function addChat(who, text) {
     const body = $('chatBody');
-    const cls = who === 'Tú' ? 'user' : 'altair';
+    let cls = 'altair';
+    if (who === 'Tú') cls = 'user';
+    else if (who === 'Sistema') cls = 'system';
     const div = document.createElement('div');
     div.className = `chat-msg ${cls}`;
-    div.innerHTML = `<span class="who">${escapeHtml(who)}</span>${escapeHtml(text).replace(/\n/g, '<br>')}`;
+    div.innerHTML = `<span class="who">${escapeHtml(who)}</span><span class="text">${escapeHtml(text).replace(/\n/g, '<br>')}</span>`;
     body.appendChild(div);
     body.scrollTop = body.scrollHeight;
 }
@@ -1790,7 +2761,10 @@ function addChat(who, text) {
 let resizeTimer;
 window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(recalculateChartHeights, 200);
+    resizeTimer = setTimeout(() => {
+        recalculateChartHeights();
+        if (zenChartInstance) zenChartInstance.resize();
+    }, 200);
 });
 
 // ============================================================

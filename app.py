@@ -30,15 +30,14 @@ DB_PATH = os.path.join(DATA_DIR, 'monitor.db')
 SECRET_KEY = os.getenv('MONITOR_SECRET_KEY', 'cambia-esto-en-produccion')
 ADMIN_PASSWORD = os.getenv('MONITOR_ADMIN_PASSWORD', 'admin')
 
-# FIX #6: validar PING_INTERVAL >= 1
 PING_INTERVAL = max(1, int(os.getenv('MONITOR_PING_INTERVAL', '10')))
 HISTORY_INTERVAL = max(1, int(os.getenv('MONITOR_HISTORY_INTERVAL', '30')))
 HISTORY_RETENTION_DAYS = int(os.getenv('MONITOR_HISTORY_DAYS', '30'))
-EVENTS_RETENTION_DAYS = int(os.getenv('MONITOR_EVENTS_DAYS', '30'))       # FIX #1
-AUDIT_RETENTION_DAYS = int(os.getenv('MONITOR_AUDIT_DAYS', '60'))         # FIX #1
+EVENTS_RETENTION_DAYS = int(os.getenv('MONITOR_EVENTS_DAYS', '30'))
+AUDIT_RETENTION_DAYS = int(os.getenv('MONITOR_AUDIT_DAYS', '60'))
 PROVIDER_CACHE_TTL = 60 * 60 * 24 * 7
 CLEANUP_INTERVAL = 3600
-IP_REGEX = re.compile(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$')    # FIX #16
+IP_REGEX = re.compile(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$')
 
 logging.basicConfig(
     level=logging.INFO,
@@ -68,7 +67,6 @@ def get_db():
     return conn
 
 def column_exists(conn, table, column):
-    # FIX #21: chequear PRAGMA en vez de try/except
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return any(r['name'] == column for r in rows)
 
@@ -113,6 +111,7 @@ def init_db():
                 details TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_events_ts ON events(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_events_ip ON events(device_ip);
 
             CREATE TABLE IF NOT EXISTS audit_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,7 +125,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS groups (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
-                color TEXT DEFAULT '#d35400'
+                color TEXT DEFAULT '#58a6ff'
             );
 
             CREATE TABLE IF NOT EXISTS users (
@@ -144,7 +143,7 @@ def init_db():
         ''')
         if not column_exists(conn, 'devices', 'hidden'):
             conn.execute("ALTER TABLE devices ADD COLUMN hidden INTEGER DEFAULT 0")
-        conn.execute("INSERT OR IGNORE INTO groups (id, name, color) VALUES ('default', 'Por defecto', '#d35400')")
+        conn.execute("INSERT OR IGNORE INTO groups (id, name, color) VALUES ('default', 'Por defecto', '#58a6ff')")
     log.info("Base de datos inicializada en %s", DB_PATH)
 
 # ============================================================
@@ -154,7 +153,6 @@ def now_iso():
     return datetime.now().isoformat()
 
 def valid_ip(ip):
-    # FIX #16: validar formato IPv4
     m = IP_REGEX.match(ip or '')
     if not m:
         return False
@@ -193,7 +191,6 @@ def set_setting(key, value):
 # PING Y PROVEEDORES
 # ============================================================
 def ping_ip(ip, timeout=2, retries=1):
-    # FIX #15: reintentos
     for attempt in range(retries + 1):
         try:
             r = ping(ip, timeout=timeout)
@@ -263,7 +260,6 @@ def get_provider(ip):
             except Exception:
                 pass
     provider, ok = fetch_provider_from_api(ip)
-    # FIX #18: solo actualizar provider_updated_at si la consulta fue exitosa
     with get_db() as conn:
         if ok:
             conn.execute(
@@ -316,7 +312,6 @@ def ping_worker():
                     "SELECT ip, name, threshold, maintenance FROM devices"
                 ).fetchall()
 
-            # FIX #3: limpiar entradas de IPs que ya no existen
             current_ips = {d['ip'] for d in devices}
             for ip in list(_last_state.keys()):
                 if ip not in current_ips:
@@ -378,7 +373,6 @@ def ping_worker():
     log.info("Ping worker detenido")
 
 def cleanup_old_data():
-    # FIX #1: limpiar history, events y audit_log
     now = datetime.now()
     with get_db() as conn:
         cutoff_h = (now - timedelta(days=HISTORY_RETENTION_DAYS)).isoformat()
@@ -396,7 +390,6 @@ def cleanup_old_data():
         if deleted > 0:
             log.info("🧹 Limpiados %d registros de audit_log", deleted)
 
-# Alias por compatibilidad
 def cleanup_old_history():
     cleanup_old_data()
 
@@ -434,20 +427,27 @@ def login():
     return f'''<!DOCTYPE html>
     <html><head><title>Login - Monitor</title>
     <style>
-    body {{ font-family: 'Segoe UI', sans-serif; background:#f4f6f8;
+    body {{ font-family: 'Inter', sans-serif; background:#0d1117; color:#e6edf3;
            display:flex; align-items:center; justify-content:center; height:100vh; margin:0; }}
-    .box {{ background:#fff; padding:40px; border-radius:10px; box-shadow:0 4px 20px rgba(0,0,0,0.08); width:320px; }}
-    h1 {{ color:#d35400; font-size:22px; margin-bottom:20px; text-align:center; }}
-    input {{ width:100%; padding:10px 14px; border:1px solid #e0e0e0; border-radius:8px;
-             font-size:14px; box-sizing:border-box; margin-bottom:14px; }}
-    input:focus {{ outline:none; border-color:#d35400; }}
-    button {{ width:100%; padding:11px; background:#d35400; color:#fff; border:none;
-              border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; }}
-    button:hover {{ background:#b84a00; }}
-    .error {{ color:#e74c3c; font-size:13px; margin-bottom:12px; text-align:center; }}
+    .box {{ background:#161b22; padding:40px; border-radius:6px;
+            border:1px solid #21262d; width:340px; }}
+    h1 {{ color:#e6edf3; font-size:16px; font-weight:600; margin-bottom:24px;
+          text-align:center; letter-spacing:0.06em; font-family:'JetBrains Mono', monospace;
+          text-transform:uppercase; }}
+    h1::before {{ content: '◆ '; color:#58a6ff; }}
+    input {{ width:100%; padding:10px 14px; border:1px solid #21262d; border-radius:4px;
+             font-size:13px; box-sizing:border-box; margin-bottom:14px; font-family:inherit;
+             background:#0d1117; color:#e6edf3; }}
+    input:focus {{ outline:none; border-color:#58a6ff; box-shadow:0 0 0 3px rgba(88,166,255,0.15); }}
+    button {{ width:100%; padding:11px; background:#58a6ff; color:#0d1117; border:none;
+              border-radius:4px; font-size:13px; font-weight:600; cursor:pointer;
+              transition:all 0.15s; font-family:inherit; }}
+    button:hover {{ background:#79c0ff; }}
+    .error {{ color:#f85149; font-size:12px; margin-bottom:12px; text-align:center;
+              font-family:'JetBrains Mono', monospace; }}
     </style></head>
     <body><div class="box">
-    <h1>🌐 Monitor de Red</h1>
+    <h1>Monitor de Red</h1>
     {f'<div class="error">{error}</div>' if error else ''}
     <form method="post">
     <input type="password" name="password" placeholder="Contraseña" autofocus required>
@@ -467,7 +467,6 @@ def logout():
 def index():
     return render_template('index.html')
 
-# FIX #14: endpoint de salud
 @app.route('/api/health', methods=['GET'])
 def api_health():
     with get_db() as conn:
@@ -476,7 +475,8 @@ def api_health():
         'status': 'ok',
         'devices': row['n'],
         'time': now_iso(),
-        'uptime_interval': PING_INTERVAL
+        'uptime_interval': PING_INTERVAL,
+        'history_interval': HISTORY_INTERVAL
     })
 
 # ---------- DEVICES ----------
@@ -507,7 +507,6 @@ def api_add_device():
     threshold = int(data.get('threshold', 100))
     if not ip:
         return jsonify({'error': 'IP requerida'}), 400
-    # FIX #16: validar formato de IP
     if not valid_ip(ip):
         return jsonify({'error': 'Formato de IP inválido'}), 400
     try:
@@ -616,7 +615,6 @@ def api_uptime(ip):
 @app.route('/api/ranking', methods=['GET'])
 @login_required
 def api_ranking():
-    # FIX #4: LEFT JOIN correcto para incluir dispositivos sin historial
     with get_db() as conn:
         rows = conn.execute('''
             SELECT d.ip, d.name, d.provider, d.alive,
@@ -651,14 +649,12 @@ def api_ranking():
 def api_history(ip):
     hours = int(request.args.get('hours', 24))
 
-    # FIX #2/#2.2: downsampling adaptativo (máximo 500 puntos)
     max_points = 500
     if hours <= 2:
         bucket_min = 0
     else:
         total_minutes = hours * 60
         bucket_min = max(1, total_minutes // max_points)
-        # redondear a valores "bonitos"
         for candidate in [1, 2, 5, 10, 15, 30, 60, 120, 240, 1440]:
             if bucket_min <= candidate:
                 bucket_min = candidate
@@ -697,11 +693,23 @@ def api_history(ip):
 @login_required
 def api_events():
     limit = int(request.args.get('limit', 100))
+    device_ip = request.args.get('ip')
+    event_type = request.args.get('type')
+
+    query = '''SELECT timestamp, device_ip, device_name, event_type, latency, details
+               FROM events WHERE 1=1'''
+    params = []
+    if device_ip:
+        query += " AND device_ip = ?"
+        params.append(device_ip)
+    if event_type:
+        query += " AND event_type = ?"
+        params.append(event_type)
+    query += " ORDER BY timestamp DESC LIMIT ?"
+    params.append(limit)
+
     with get_db() as conn:
-        rows = conn.execute('''
-            SELECT timestamp, device_ip, device_name, event_type, latency, details
-            FROM events ORDER BY timestamp DESC LIMIT ?
-        ''', (limit,)).fetchall()
+        rows = conn.execute(query, params).fetchall()
     return jsonify([dict(r) for r in rows])
 
 # ---------- AUDIT ----------
@@ -716,11 +724,10 @@ def api_audit():
         ''', (limit,)).fetchall()
     return jsonify([dict(r) for r in rows])
 
-# ---------- WHOIS con cache ----------
+# ---------- WHOIS ----------
 @app.route('/api/whois/<ip>', methods=['GET'])
 @login_required
 def api_whois(ip):
-    # FIX #20: cache de whois en settings
     cache_key = f'whois:{ip}'
     cached = get_setting(cache_key)
     if cached:
@@ -772,7 +779,7 @@ def api_export_excel():
     for col, h in enumerate(headers, 1):
         c = ws.cell(row=1, column=col, value=h)
         c.font = Font(bold=True, color="FFFFFF")
-        c.fill = PatternFill(start_color="d35400", end_color="d35400", fill_type="solid")
+        c.fill = PatternFill(start_color="58a6ff", end_color="58a6ff", fill_type="solid")
         c.alignment = Alignment(horizontal="center")
     for row, d in enumerate(devices, 2):
         ws.cell(row=row, column=1, value=d['ip'])
@@ -845,7 +852,6 @@ _users_cache = {'ts': 0, 'data': []}
 _users_cache_lock = threading.Lock()
 
 def _active_users_cached():
-    # FIX #19: cache 5s
     with _users_cache_lock:
         now = time.time()
         if (now - _users_cache['ts']) < 5:
@@ -864,7 +870,6 @@ def _active_users_cached():
 _last_users_set = set()
 
 def _emit_users_if_changed():
-    # FIX #2: solo emitir users_update si cambió el conjunto
     global _last_users_set
     users = _active_users_cached()
     current_set = frozenset(u['ip'] for u in users)
@@ -899,12 +904,10 @@ def handle_disconnect():
 
 @socketio.on('heartbeat')
 def handle_heartbeat():
-    # FIX #2: heartbeat no emite users_update siempre
     ip = request.remote_addr
     with get_db() as conn:
         conn.execute("UPDATE users SET last_seen = ? WHERE ip = ?", (now_iso(), ip))
-    _users_cache['ts'] = 0  # invalidar cache
-    # no emitir, dejar que el próximo cambio lo haga
+    _users_cache['ts'] = 0
 
 @socketio.on('ask_altair')
 def handle_altair(data):
@@ -1018,15 +1021,15 @@ if __name__ == '__main__':
         pass
 
     print("=" * 60)
-    print("🌐 MONITOR DE RED")
+    print("MONITOR DE RED")
     print("=" * 60)
-    print(f"📁 Datos:      {DATA_DIR}")
-    print(f"📡 Local:      http://127.0.0.1:5001")
-    print(f"📡 Red:        http://{local_ip}:5001")
-    print(f"🔐 Password:   {'(sin auth)' if not ADMIN_PASSWORD else '(configurado)'}")
-    print(f"⏱️  Ping:       cada {PING_INTERVAL}s")
-    print(f"📝 Historial:  cada {HISTORY_INTERVAL}s ({HISTORY_RETENTION_DAYS} días)")
-    print(f"📋 Eventos:    {EVENTS_RETENTION_DAYS} días")
-    print(f"📝 Auditoría:  {AUDIT_RETENTION_DAYS} días")
+    print(f"Datos:      {DATA_DIR}")
+    print(f"Local:      http://127.0.0.1:5001")
+    print(f"Red:        http://{local_ip}:5001")
+    print(f"Password:   {'(sin auth)' if not ADMIN_PASSWORD else '(configurado)'}")
+    print(f"Ping:       cada {PING_INTERVAL}s")
+    print(f"Historial:  cada {HISTORY_INTERVAL}s ({HISTORY_RETENTION_DAYS} días)")
+    print(f"Eventos:    {EVENTS_RETENTION_DAYS} días")
+    print(f"Auditoría:  {AUDIT_RETENTION_DAYS} días")
     print("=" * 60)
     socketio.run(app, debug=False, host='0.0.0.0', port=5001)
