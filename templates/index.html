@@ -947,15 +947,17 @@ body.compact .header { padding: var(--space-3) var(--space-4); }
    ============================================================ */
 .topo-wrap {
     width: 100%;
-    height: calc(100vh - 260px);
-    min-height: 520px;
+    height: calc(100vh - 180px);
+    min-height: 480px;
     position: relative;
     background: var(--surface);
     border-radius: var(--radius);
     border: 1px solid var(--border);
     box-shadow: var(--shadow);
     overflow: hidden;
+    touch-action: none;
 }
+
 body.theme-unifi-light .topo-wrap,
 body.theme-unifi-dark .topo-wrap {
     background:
@@ -965,13 +967,18 @@ body.theme-unifi-dark .topo-wrap {
 body.theme-unifi-dark .topo-wrap {
     box-shadow: 0 0 0 1px var(--border), 0 8px 32px rgba(59, 130, 246, 0.08);
 }
+
 #topoCanvas {
     display: block;
     width: 100%;
     height: 100%;
     cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
 }
-#topoCanvas:active { cursor: grabbing; }
+#topoCanvas.grabbing { cursor: grabbing; }
+#topoCanvas.pointing { cursor: pointer; }
+
 .topo-hint {
     position: absolute;
     bottom: 12px;
@@ -984,9 +991,12 @@ body.theme-unifi-dark .topo-wrap {
     border: 1px solid var(--border);
     pointer-events: none;
     font-family: 'JetBrains Mono', monospace;
-    opacity: 0.75;
+    opacity: 0.8;
     z-index: 2;
+    max-width: 60%;
+    line-height: 1.4;
 }
+
 .topo-legend {
     position: absolute;
     top: 12px;
@@ -1003,6 +1013,7 @@ body.theme-unifi-dark .topo-wrap {
     pointer-events: none;
     font-family: 'JetBrains Mono', monospace;
     z-index: 2;
+    box-shadow: var(--shadow-sm);
 }
 .topo-legend .row {
     display: flex;
@@ -1019,6 +1030,100 @@ body.theme-unifi-dark .topo-wrap {
 .topo-legend .sw.offline { background: var(--red); box-shadow: 0 0 6px var(--red); }
 .topo-legend .sw.maintenance { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
 .topo-legend .sw.high { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+
+/* Controles de zoom */
+.topo-controls {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    padding: 4px;
+    box-shadow: var(--shadow-sm);
+    z-index: 3;
+}
+.topo-controls button {
+    width: 30px;
+    height: 30px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 16px;
+    font-weight: 700;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+    font-family: inherit;
+    line-height: 1;
+}
+.topo-controls button:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+.topo-controls button:active { transform: scale(0.92); }
+
+/* Tooltip flotante */
+.topo-tooltip {
+    position: absolute;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text);
+    pointer-events: none;
+    box-shadow: var(--shadow-md);
+    z-index: 4;
+    opacity: 0;
+    transition: opacity 0.15s;
+    max-width: 260px;
+    font-family: 'Inter', sans-serif;
+    line-height: 1.4;
+    transform: translate(-50%, -100%);
+}
+.topo-tooltip.visible { opacity: 1; }
+.topo-tooltip .tt-name {
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 2px;
+}
+.topo-tooltip .tt-ip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+.topo-tooltip .tt-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+.topo-tooltip .tt-row strong {
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+}
+.topo-tooltip .tt-status {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.topo-tooltip .tt-status.online { background: var(--green-soft); color: var(--green); }
+.topo-tooltip .tt-status.offline { background: var(--red-soft); color: var(--red); }
+.topo-tooltip .tt-status.maintenance { background: var(--accent-soft); color: var(--accent); }
+.topo-tooltip .tt-status.high { background: var(--yellow-soft); color: var(--yellow); }
 
 /* ============================================================
    SEMÁFORO
@@ -1641,7 +1746,9 @@ body.theme-unifi-dark .header.has-down {
         max-width: none;
     }
     .theme-menu { right: -8px; }
-    .topo-wrap { height: 400px; min-height: 400px; }
+    .topo-wrap { height: 70vh; min-height: 420px; }
+    .topo-hint { display: none; }
+    .topo-legend { padding: 6px 8px; font-size: 10px; }
 }
 </style>
 </head>
@@ -2230,6 +2337,13 @@ let topoCtx = null;
 let topoW = 0, topoH = 0;
 let topoLastPulse = 0;
 let topoDpr = window.devicePixelRatio || 1;
+let topoCam = { x: 0, y: 0, zoom: 1, targetZoom: 1 };
+let topoDragging = false;
+let topoDragStart = { x: 0, y: 0 };
+let topoCamStart = { x: 0, y: 0 };
+let topoHoverNode = null;
+let topoLastFrame = 0;
+let topoTouchDist = 0;
 
 // ============================================================
 // HELPERS
@@ -2545,7 +2659,6 @@ function setupSocket() {
                 }
             }
             if (topoActive) {
-                // Refrescar colores de nodos en topología
                 topoUpdateNodeColors();
             }
         }
@@ -3362,7 +3475,7 @@ function generatePalette(n) {
 }
 
 // ============================================================
-// MODO 5: TOPOLOGÍA (grafo animado tipo red de servidores)
+// MODO 5: TOPOLOGÍA (grafo animado, responsive, con zoom/pan)
 // ============================================================
 async function renderTopologiaMode(container, list, myGen) {
     container.className = '';
@@ -3376,7 +3489,13 @@ async function renderTopologiaMode(container, list, myGen) {
                 <div class="row"><span class="sw maintenance"></span> Mantenimiento</div>
                 <div class="row"><span class="sw high"></span> Latencia alta</div>
             </div>
-            <div class="topo-hint">clic en un nodo · rueda para zoom · arrastra para mover</div>
+            <div class="topo-controls">
+                <button onclick="topoZoom(1.2)" title="Acercar">+</button>
+                <button onclick="topoZoom(1/1.2)" title="Alejar">−</button>
+                <button onclick="topoResetView()" title="Centrar">⌖</button>
+            </div>
+            <div class="topo-tooltip" id="topoTooltip"></div>
+            <div class="topo-hint">rueda = zoom · arrastra = mover · doble clic = centrar · clic = detalles</div>
         </div>
     `;
 
@@ -3384,19 +3503,37 @@ async function renderTopologiaMode(container, list, myGen) {
     topoCtx = topoCanvas.getContext('2d');
     topoActive = true;
 
+    // Estado de cámara
+    topoCam = { x: 0, y: 0, zoom: 1, targetZoom: 1 };
+    topoDragging = false;
+    topoDragStart = { x: 0, y: 0 };
+    topoCamStart = { x: 0, y: 0 };
+    topoHoverNode = null;
+
     topoResize();
 
-    // Construir grafo: nodo central + satélites
+    // Construir grafo
     buildTopoGraph(list);
 
-    // Arrancar bucle de animación
+    // Arrancar loop
     topoLastPulse = performance.now();
+    topoLastFrame = performance.now();
     topoLoop(performance.now());
 
-    // Eventos de interacción
+    // Eventos
+    topoCanvas.addEventListener('mousedown', topoOnMouseDown);
     topoCanvas.addEventListener('mousemove', topoOnMouseMove);
+    topoCanvas.addEventListener('mouseup', topoOnMouseUp);
     topoCanvas.addEventListener('mouseleave', topoOnMouseLeave);
     topoCanvas.addEventListener('click', topoOnClick);
+    topoCanvas.addEventListener('dblclick', topoResetView);
+    topoCanvas.addEventListener('wheel', topoOnWheel, { passive: false });
+
+    // Touch (móvil)
+    topoCanvas.addEventListener('touchstart', topoOnTouchStart, { passive: false });
+    topoCanvas.addEventListener('touchmove', topoOnTouchMove, { passive: false });
+    topoCanvas.addEventListener('touchend', topoOnTouchEnd);
+
     window.addEventListener('resize', topoResize);
 }
 
@@ -3409,37 +3546,26 @@ function buildTopoGraph(list) {
     const w = wrap.clientWidth;
     const h = wrap.clientHeight;
 
-    // Nodo central
     const center = {
         x: w / 2,
         y: h / 2,
-        r: 46,
+        r: 0,
         type: 'core',
         label: 'CORE',
         sublabel: `${list.length} hosts`,
         ip: null,
         alive: true,
         maintenance: false,
-        high: false
+        high: false,
+        bobPhase: Math.random() * Math.PI * 2
     };
     topoNodes.push(center);
 
-    // Satélites en anillo
     const n = list.length;
-    const innerR = Math.min(w, h) * 0.28;
-    const outerR = Math.min(w, h) * 0.42;
-    const ringR = n <= 8 ? innerR : outerR;
-
     list.forEach((dev, i) => {
-        const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
-        const jitter = n > 12 ? (i % 2 === 0 ? 0.06 : -0.06) : 0;
-        const r = ringR * (1 + jitter);
-        const x = w / 2 + Math.cos(angle) * r;
-        const y = h / 2 + Math.sin(angle) * r;
-
         const node = {
-            x, y,
-            r: 24,
+            x: 0, y: 0,
+            r: 0,
             type: 'host',
             label: dev.name,
             sublabel: dev.ip,
@@ -3448,23 +3574,82 @@ function buildTopoGraph(list) {
             maintenance: dev.maintenance,
             high: isHighLatency(dev),
             latency: dev.last_latency,
-            angle
+            angle: (i / n) * Math.PI * 2 - Math.PI / 2,
+            bobPhase: Math.random() * Math.PI * 2,
+            pulsePhase: Math.random() * Math.PI * 2
         };
         topoNodes.push(node);
-
         topoLinks.push({
             a: center,
             b: node,
-            angle,
             pulseT: Math.random(),
-            pulseSpeed: 0.35 + Math.random() * 0.4
+            pulseSpeed: 0.25 + Math.random() * 0.35
         });
+    });
+
+    topoLayout();
+}
+
+function topoLayout() {
+    if (!topoNodes.length) return;
+    const wrap = document.getElementById('topoWrap');
+    if (!wrap) return;
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+    const minDim = Math.min(w, h);
+
+    const center = topoNodes[0];
+    center.x = w / 2;
+    center.y = h / 2;
+
+    const hosts = topoNodes.slice(1);
+    const n = hosts.length;
+    if (n === 0) return;
+
+    const nodeR = Math.max(14, Math.min(26, minDim / 22));
+    const coreR = Math.max(30, Math.min(52, minDim / 12));
+
+    center.r = coreR;
+
+    let rings;
+    if (n <= 12) rings = [{ count: n, radius: minDim * 0.34 }];
+    else if (n <= 28) {
+        const inner = Math.ceil(n * 0.4);
+        rings = [
+            { count: inner, radius: minDim * 0.26 },
+            { count: n - inner, radius: minDim * 0.42 }
+        ];
+    } else {
+        const inner = Math.ceil(n * 0.3);
+        const mid = Math.ceil(n * 0.3);
+        rings = [
+            { count: inner, radius: minDim * 0.22 },
+            { count: mid, radius: minDim * 0.36 },
+            { count: n - inner - mid, radius: minDim * 0.48 }
+        ];
+    }
+
+    let idx = 0;
+    rings.forEach((ring, ri) => {
+        const count = Math.min(ring.count, n - idx);
+        for (let k = 0; k < count; k++) {
+            const node = hosts[idx++];
+            if (!node) break;
+            const angle = (k / count) * Math.PI * 2 - Math.PI / 2 + (ri * 0.35);
+            node.baseX = w / 2 + Math.cos(angle) * ring.radius;
+            node.baseY = h / 2 + Math.sin(angle) * ring.radius;
+            node.x = node.baseX;
+            node.y = node.baseY;
+            node.r = nodeR;
+            node.angle = angle;
+            node.ring = ri;
+        }
     });
 }
 
 function topoUpdateNodeColors() {
     if (!topoNodes.length) return;
-    topoNodes.forEach((node, i) => {
+    topoNodes.forEach(node => {
         if (node.type !== 'host') return;
         const dev = devices.find(d => d.ip === node.ip);
         if (!dev) return;
@@ -3488,62 +3673,166 @@ function topoResize() {
     if (!topoCanvas) return;
     const wrap = document.getElementById('topoWrap');
     if (!wrap) return;
-    topoW = wrap.clientWidth;
-    topoH = wrap.clientHeight;
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+    if (w <= 0 || h <= 0) return;
+
+    topoW = w;
+    topoH = h;
     topoDpr = window.devicePixelRatio || 1;
-    topoCanvas.width = topoW * topoDpr;
-    topoCanvas.height = topoH * topoDpr;
-    topoCanvas.style.width = topoW + 'px';
-    topoCanvas.style.height = topoH + 'px';
+    topoCanvas.width = Math.round(w * topoDpr);
+    topoCanvas.height = Math.round(h * topoDpr);
+    topoCanvas.style.width = w + 'px';
+    topoCanvas.style.height = h + 'px';
     topoCtx.setTransform(topoDpr, 0, 0, topoDpr, 0, 0);
 
-    // Recolocar nodos
-    if (topoNodes.length > 1) {
-        const center = topoNodes[0];
-        center.x = topoW / 2;
-        center.y = topoH / 2;
-        const hosts = topoNodes.slice(1);
-        const n = hosts.length;
-        const innerR = Math.min(topoW, topoH) * 0.28;
-        const outerR = Math.min(topoW, topoH) * 0.42;
-        const ringR = n <= 8 ? innerR : outerR;
-        hosts.forEach((node, i) => {
-            const angle = (i / n) * Math.PI * 2 - Math.PI / 2;
-            const jitter = n > 12 ? (i % 2 === 0 ? 0.06 : -0.06) : 0;
-            const r = ringR * (1 + jitter);
-            node.x = topoW / 2 + Math.cos(angle) * r;
-            node.y = topoH / 2 + Math.sin(angle) * r;
-            node.angle = angle;
-        });
-    }
+    topoLayout();
 }
 
-let topoHoverNode = null;
+function topoZoom(factor) {
+    if (!topoCam) return;
+    const newZoom = Math.max(0.35, Math.min(3, topoCam.targetZoom * factor));
+    topoCam.targetZoom = newZoom;
+}
+
+function topoResetView() {
+    if (!topoCam) return;
+    topoCam.targetZoom = 1;
+    topoCam.x = 0;
+    topoCam.y = 0;
+}
+
+function topoOnWheel(e) {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    topoZoom(factor);
+}
+
+function topoOnMouseDown(e) {
+    if (topoHoverNode) return;
+    topoDragging = true;
+    topoDragStart = { x: e.clientX, y: e.clientY };
+    topoCamStart = { x: topoCam.x, y: topoCam.y };
+    topoCanvas.classList.add('grabbing');
+}
+
+function topoOnMouseUp() {
+    topoDragging = false;
+    topoCanvas.classList.remove('grabbing');
+}
 
 function topoOnMouseMove(e) {
     const rect = topoCanvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    topoHoverNode = null;
-    for (const node of topoNodes) {
-        const dx = mx - node.x;
-        const dy = my - node.y;
-        if (dx*dx + dy*dy <= node.r * node.r) {
-            topoHoverNode = node;
-            break;
-        }
+
+    if (topoDragging) {
+        topoCam.x = topoCamStart.x + (e.clientX - topoDragStart.x);
+        topoCam.y = topoCamStart.y + (e.clientY - topoDragStart.y);
+        return;
     }
-    topoCanvas.style.cursor = topoHoverNode ? 'pointer' : 'grab';
+
+    const world = topoScreenToWorld(mx, my);
+    let found = null;
+    for (let i = topoNodes.length - 1; i >= 0; i--) {
+        const node = topoNodes[i];
+        const dx = world.x - node.x;
+        const dy = world.y - node.y;
+        if (dx * dx + dy * dy <= node.r * node.r) { found = node; break; }
+    }
+    topoHoverNode = found;
+    topoCanvas.classList.toggle('pointing', !!found);
+    topoShowTooltip(found, mx, my);
 }
 
 function topoOnMouseLeave() {
     topoHoverNode = null;
+    topoHideTooltip();
 }
 
 function topoOnClick(e) {
     if (topoHoverNode && topoHoverNode.ip) {
         openDeviceModal(topoHoverNode.ip);
     }
+}
+
+function topoScreenToWorld(sx, sy) {
+    const cx = topoW / 2;
+    const cy = topoH / 2;
+    return {
+        x: (sx - cx - topoCam.x) / topoCam.zoom + cx,
+        y: (sy - cy - topoCam.y) / topoCam.zoom + cy
+    };
+}
+
+function topoShowTooltip(node, sx, sy) {
+    const tip = document.getElementById('topoTooltip');
+    if (!tip) return;
+    if (!node || node.type === 'core') {
+        topoHideTooltip();
+        return;
+    }
+    let status = 'online', statusText = 'En línea';
+    if (node.maintenance) { status = 'maintenance'; statusText = 'Mantenimiento'; }
+    else if (!node.alive) { status = 'offline'; statusText = 'Caído'; }
+    else if (node.high) { status = 'high'; statusText = 'Latencia alta'; }
+
+    const lat = node.latency != null ? `${node.latency} ms` : '--';
+    const dev = devices.find(d => d.ip === node.ip);
+    const provider = dev ? (dev.provider || '--') : '--';
+
+    tip.innerHTML = `
+        <div class="tt-name">${escapeHtml(node.label)}</div>
+        <div class="tt-ip">${node.sublabel}</div>
+        <div class="tt-row"><span>Estado</span><span class="tt-status ${status}">${statusText}</span></div>
+        <div class="tt-row"><span>Latencia</span><strong>${lat}</strong></div>
+        <div class="tt-row"><span>ISP</span><strong>${escapeHtml(provider)}</strong></div>
+    `;
+    tip.style.left = sx + 'px';
+    tip.style.top = (sy - 12) + 'px';
+    tip.classList.add('visible');
+}
+
+function topoHideTooltip() {
+    const tip = document.getElementById('topoTooltip');
+    if (tip) tip.classList.remove('visible');
+}
+
+// ------- Touch (móvil) -------
+function topoOnTouchStart(e) {
+    if (e.touches.length === 1) {
+        const t = e.touches[0];
+        topoDragging = true;
+        topoDragStart = { x: t.clientX, y: t.clientY };
+        topoCamStart = { x: topoCam.x, y: topoCam.y };
+    } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        topoTouchDist = Math.hypot(dx, dy);
+    }
+}
+
+function topoOnTouchMove(e) {
+    e.preventDefault();
+    if (e.touches.length === 1 && topoDragging) {
+        const t = e.touches[0];
+        topoCam.x = topoCamStart.x + (t.clientX - topoDragStart.x);
+        topoCam.y = topoCamStart.y + (t.clientY - topoDragStart.y);
+    } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.hypot(dx, dy);
+        if (topoTouchDist > 0) {
+            const factor = dist / topoTouchDist;
+            topoCam.targetZoom = Math.max(0.35, Math.min(3, topoCam.targetZoom * factor));
+        }
+        topoTouchDist = dist;
+    }
+}
+
+function topoOnTouchEnd() {
+    topoDragging = false;
+    topoTouchDist = 0;
 }
 
 function topoStop() {
@@ -3553,65 +3842,83 @@ function topoStop() {
         topoAnimId = null;
     }
     if (topoCanvas) {
+        topoCanvas.removeEventListener('mousedown', topoOnMouseDown);
         topoCanvas.removeEventListener('mousemove', topoOnMouseMove);
+        topoCanvas.removeEventListener('mouseup', topoOnMouseUp);
         topoCanvas.removeEventListener('mouseleave', topoOnMouseLeave);
         topoCanvas.removeEventListener('click', topoOnClick);
+        topoCanvas.removeEventListener('dblclick', topoResetView);
+        topoCanvas.removeEventListener('wheel', topoOnWheel);
+        topoCanvas.removeEventListener('touchstart', topoOnTouchStart);
+        topoCanvas.removeEventListener('touchmove', topoOnTouchMove);
+        topoCanvas.removeEventListener('touchend', topoOnTouchEnd);
+        topoCanvas.classList.remove('grabbing', 'pointing');
     }
+    topoHideTooltip();
+    window.removeEventListener('resize', topoResize);
 }
 
 function topoLoop(now) {
     if (!topoActive || !topoCtx) return;
 
-    // Actualizar pulsos
-    const dt = Math.min(64, now - topoLastPulse) / 1000;
-    topoLastPulse = now;
+    const dt = Math.min(64, now - topoLastFrame) / 1000;
+    topoLastFrame = now;
+
+    topoCam.zoom += (topoCam.targetZoom - topoCam.zoom) * Math.min(1, dt * 12);
+
     topoLinks.forEach(link => {
         link.pulseT += dt * link.pulseSpeed;
-        if (link.pulseT > 1) {
-            link.pulseT -= 1;
-        }
+        if (link.pulseT > 1) link.pulseT -= 1;
+    });
+
+    const t = now / 1000;
+    topoNodes.forEach(node => {
+        if (node.type !== 'host') return;
+        if (node.baseX == null) return;
+        const phase = node.bobPhase || 0;
+        const amp = 3.5;
+        node.x = node.baseX + Math.cos(t * 0.8 + phase) * amp;
+        node.y = node.baseY + Math.sin(t * 1.1 + phase) * amp;
     });
 
     topoCtx.clearRect(0, 0, topoW, topoH);
 
-    // Fondo con grid sutil
+    topoCtx.save();
+    topoCtx.translate(topoW / 2 + topoCam.x, topoH / 2 + topoCam.y);
+    topoCtx.scale(topoCam.zoom, topoCam.zoom);
+    topoCtx.translate(-topoW / 2, -topoH / 2);
+
     drawTopoGrid();
 
-    // Cables (curvas Bézier)
-    topoLinks.forEach(link => {
-        drawTopoLink(link);
-    });
+    topoLinks.forEach(drawTopoLink);
+    topoLinks.forEach(drawTopoPulse);
+    topoNodes.forEach(node => drawTopoNode(node, node === topoHoverNode));
 
-    // Pulsos viajando por los cables
-    topoLinks.forEach(link => {
-        drawTopoPulse(link);
-    });
-
-    // Nodos
-    topoNodes.forEach(node => {
-        drawTopoNode(node, node === topoHoverNode);
-    });
+    topoCtx.restore();
 
     topoAnimId = requestAnimationFrame(topoLoop);
 }
 
 function drawTopoGrid() {
     const gridColor = cssVar('--border') || '#e2e8f0';
-    const step = 40;
+    const step = 48;
+    const cx = topoW / 2;
+    const cy = topoH / 2;
     topoCtx.save();
     topoCtx.strokeStyle = gridColor;
-    topoCtx.globalAlpha = 0.35;
+    topoCtx.globalAlpha = 0.28;
     topoCtx.lineWidth = 1;
-    for (let x = 0; x < topoW; x += step) {
+    const ext = 4000;
+    for (let x = -ext; x < ext; x += step) {
         topoCtx.beginPath();
-        topoCtx.moveTo(x, 0);
-        topoCtx.lineTo(x, topoH);
+        topoCtx.moveTo(cx + x, -ext);
+        topoCtx.lineTo(cx + x, ext);
         topoCtx.stroke();
     }
-    for (let y = 0; y < topoH; y += step) {
+    for (let y = -ext; y < ext; y += step) {
         topoCtx.beginPath();
-        topoCtx.moveTo(0, y);
-        topoCtx.lineTo(topoW, y);
+        topoCtx.moveTo(-ext, cy + y);
+        topoCtx.lineTo(ext, cy + y);
         topoCtx.stroke();
     }
     topoCtx.restore();
@@ -3621,49 +3928,46 @@ function drawTopoLink(link) {
     const a = link.a;
     const b = link.b;
     const color = topoNodeColor(b);
-    // Curva de Bézier con control perpendicular al eje centro-nodo
-    const mx = (a.x + b.x) / 2;
-    const my = (a.y + b.y) / 2;
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy) || 1;
+
     const perpX = -dy / len;
     const perpY = dx / len;
-    const curve = Math.min(70, len * 0.2);
-    const cx = mx + perpX * curve;
-    const cy = my + perpY * curve;
+    const curve = Math.min(50, len * 0.15);
+    const cx = (a.x + b.x) / 2 + perpX * curve;
+    const cy = (a.y + b.y) / 2 + perpY * curve;
 
     topoCtx.save();
     topoCtx.strokeStyle = color;
     topoCtx.globalAlpha = b.alive ? 0.55 : 0.35;
     topoCtx.lineWidth = b.alive ? 2 : 1.5;
-    topoCtx.setLineDash(b.alive ? [] : [5, 5]);
+    topoCtx.setLineDash(b.alive ? [] : [6, 6]);
+    topoCtx.lineCap = 'round';
     topoCtx.beginPath();
     topoCtx.moveTo(a.x, a.y);
     topoCtx.quadraticCurveTo(cx, cy, b.x, b.y);
     topoCtx.stroke();
     topoCtx.restore();
 
-    // Guardar el path por si queremos usarlo luego
     link._cx = cx;
     link._cy = cy;
 }
 
 function drawTopoPulse(link) {
+    if (!link.b.alive || link.b.maintenance) return;
     const a = link.a;
     const b = link.b;
-    if (!b.alive) return;
     const t = link.pulseT;
-    // Punto sobre la curva cuadrática
-    const cx = link._cx;
-    const cy = link._cy;
-    const x = (1-t)*(1-t)*a.x + 2*(1-t)*t*cx + t*t*b.x;
-    const y = (1-t)*(1-t)*a.y + 2*(1-t)*t*cy + t*t*b.y;
+    const cx = link._cx ?? (a.x + b.x) / 2;
+    const cy = link._cy ?? (a.y + b.y) / 2;
+    const x = (1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * cx + t * t * b.x;
+    const y = (1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * cy + t * t * b.y;
 
     const color = topoNodeColor(b);
     topoCtx.save();
     topoCtx.shadowColor = color;
-    topoCtx.shadowBlur = 12;
+    topoCtx.shadowBlur = 14;
     topoCtx.fillStyle = color;
     topoCtx.globalAlpha = 0.9;
     topoCtx.beginPath();
@@ -3675,46 +3979,41 @@ function drawTopoPulse(link) {
 function drawTopoNode(node, hover) {
     const color = topoNodeColor(node);
     const isCore = node.type === 'core';
-    const r = node.r + (hover ? 3 : 0);
-
-    // Halo exterior pulsante
+    const r = node.r + (hover ? 4 : 0);
     const time = performance.now() / 1000;
-    const pulse = isCore ? (Math.sin(time * 2) * 0.5 + 0.5) * 6 + 8
-                         : (Math.sin(time * 2 + node.x * 0.01) * 0.5 + 0.5) * 4 + 4;
 
     topoCtx.save();
     topoCtx.shadowColor = color;
-    topoCtx.shadowBlur = isCore ? 24 : 14;
+    topoCtx.shadowBlur = isCore ? 28 : 16;
 
-    // Halo
+    const pulse = isCore
+        ? (Math.sin(time * 1.5) * 0.5 + 0.5) * 8 + 10
+        : (Math.sin(time * 2 + (node.pulsePhase || 0)) * 0.5 + 0.5) * 5 + 5;
+
     topoCtx.fillStyle = color;
-    topoCtx.globalAlpha = 0.12;
+    topoCtx.globalAlpha = 0.10;
     topoCtx.beginPath();
     topoCtx.arc(node.x, node.y, r + pulse, 0, Math.PI * 2);
     topoCtx.fill();
 
-    // Círculo principal
     topoCtx.globalAlpha = 0.18;
     topoCtx.beginPath();
     topoCtx.arc(node.x, node.y, r, 0, Math.PI * 2);
     topoCtx.fill();
 
-    // Borde
     topoCtx.globalAlpha = 1;
-    topoCtx.lineWidth = isCore ? 2.5 : 2;
+    topoCtx.lineWidth = isCore ? 2.5 : (hover ? 2.5 : 2);
     topoCtx.strokeStyle = color;
     topoCtx.beginPath();
     topoCtx.arc(node.x, node.y, r, 0, Math.PI * 2);
     topoCtx.stroke();
 
-    // Punto central
     topoCtx.fillStyle = color;
     topoCtx.beginPath();
     topoCtx.arc(node.x, node.y, isCore ? 6 : 4, 0, Math.PI * 2);
     topoCtx.fill();
     topoCtx.restore();
 
-    // Etiqueta del nodo
     topoCtx.save();
     topoCtx.textAlign = 'center';
     topoCtx.textBaseline = 'middle';
@@ -3732,10 +4031,19 @@ function drawTopoNode(node, hover) {
         topoCtx.fillStyle = subColor;
         topoCtx.fillText(node.sublabel, node.x, node.y + 8);
     } else {
-        // Etiqueta debajo del nodo
+        if (node.alive && node.latency != null) {
+            topoCtx.font = '700 10px JetBrains Mono, monospace';
+            topoCtx.fillStyle = color;
+            topoCtx.fillText(`${node.latency}ms`, node.x, node.y - r - 10);
+        } else if (!node.alive) {
+            topoCtx.font = '700 10px JetBrains Mono, monospace';
+            topoCtx.fillStyle = color;
+            topoCtx.fillText('DOWN', node.x, node.y - r - 10);
+        }
+
         const labelY = node.y + r + 16;
         const labelText = node.label || node.ip;
-        const truncated = labelText.length > 16 ? labelText.slice(0, 15) + '…' : labelText;
+        const truncated = labelText.length > 18 ? labelText.slice(0, 17) + '…' : labelText;
 
         topoCtx.font = '600 11px Inter, sans-serif';
         const tw = topoCtx.measureText(truncated).width;
@@ -3743,38 +4051,20 @@ function drawTopoNode(node, hover) {
         const boxW = tw + pad * 2;
         const boxH = 18;
 
-        // Caja con fondo
         topoCtx.fillStyle = bgColor;
-        topoCtx.globalAlpha = 0.9;
-        roundRect(topoCtx, node.x - boxW/2, labelY - boxH/2, boxW, boxH, 5);
+        topoCtx.globalAlpha = 0.92;
+        roundRect(topoCtx, node.x - boxW / 2, labelY - boxH / 2, boxW, boxH, 5);
         topoCtx.fill();
         topoCtx.globalAlpha = 1;
         topoCtx.strokeStyle = borderColor;
         topoCtx.lineWidth = 1;
-        roundRect(topoCtx, node.x - boxW/2, labelY - boxH/2, boxW, boxH, 5);
+        roundRect(topoCtx, node.x - boxW / 2, labelY - boxH / 2, boxW, boxH, 5);
         topoCtx.stroke();
 
-        // Texto
         topoCtx.fillStyle = labelColor;
         topoCtx.fillText(truncated, node.x, labelY + 1);
-
-        // IP debajo (más pequeña)
-        topoCtx.font = '500 9px JetBrains Mono, monospace';
-        topoCtx.fillStyle = subColor;
-        topoCtx.fillText(node.sublabel, node.x, labelY + boxH + 4);
     }
     topoCtx.restore();
-
-    // Latencia (si aplica)
-    if (!isCore && node.alive && node.latency != null) {
-        topoCtx.save();
-        topoCtx.font = '700 10px JetBrains Mono, monospace';
-        topoCtx.fillStyle = color;
-        topoCtx.textAlign = 'center';
-        topoCtx.textBaseline = 'middle';
-        topoCtx.fillText(`${node.latency}ms`, node.x, node.y - r + 4);
-        topoCtx.restore();
-    }
 }
 
 function roundRect(ctx, x, y, w, h, r) {
