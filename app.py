@@ -4,11 +4,14 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 from ping3 import ping
 from functools import wraps
+from contextlib import contextmanager
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import socket
 import sqlite3
+import secrets
 import threading
 import time
 import logging
@@ -27,7 +30,23 @@ DATA_DIR = os.path.join(BASE_DIR, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, 'monitor.db')
 
-SECRET_KEY = os.getenv('MONITOR_SECRET_KEY', 'cambia-esto-en-produccion')
+def _load_or_create_secret():
+    p = os.path.join(DATA_DIR, '.secret')
+    if os.path.exists(p):
+        try:
+            return open(p).read().strip()
+        except Exception:
+            pass
+    s = secrets.token_urlsafe(48)
+    with open(p, 'w') as f:
+        f.write(s)
+    try:
+        os.chmod(p, 0o600)
+    except Exception:
+        pass
+    return s
+
+SECRET_KEY = os.getenv('MONITOR_SECRET_KEY') or _load_or_create_secret()
 ADMIN_PASSWORD = os.getenv('MONITOR_ADMIN_PASSWORD', 'admin')
 
 PING_INTERVAL = max(1, int(os.getenv('MONITOR_PING_INTERVAL', '10')))
@@ -37,6 +56,13 @@ EVENTS_RETENTION_DAYS = int(os.getenv('MONITOR_EVENTS_DAYS', '30'))
 AUDIT_RETENTION_DAYS = int(os.getenv('MONITOR_AUDIT_DAYS', '60'))
 PROVIDER_CACHE_TTL = 60 * 60 * 24 * 7
 CLEANUP_INTERVAL = 3600
+PING_MAX_WORKERS = int(os.getenv('MONITOR_PING_WORKERS', '32'))
+HIGH_LATENCY_COOLDOWN = 300
+
+OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434')
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'llama3.2:3b')
+ALTAIR_USE_LLM = os.getenv('ALTAIR_USE_LLM', 'auto')
+
 IP_REGEX = re.compile(r'^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$')
 
 logging.basicConfig(
@@ -53,18 +79,30 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = SECRET_KEY
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-CORS(app, supports_credentials=True)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+_allowed = os.getenv('MONITOR_ORIGINS', '').strip()
+_origins = [o.strip() for o in _allowed.split(',') if o.strip()] if _allowed else "*"
+
+CORS(app, origins=_origins, supports_credentials=True)
+socketio = SocketIO(app, cors_allowed_origins=_origins, async_mode='threading')
 
 # ============================================================
 # BASE DE DATOS
 # ============================================================
+@contextmanager
 def get_db():
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
-    conn.execute('PRAGMA journal_mode=WAL')
-    conn.execute('PRAGMA foreign_keys=ON')
-    return conn
+    try:
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('PRAGMA foreign_keys=ON')
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 def column_exists(conn, table, column):
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
@@ -228,11 +266,11 @@ def clean_provider_name(provider):
     return p.strip() or 'Desconocido'
 
 def is_local_ip(ip):
-    return (ip.startswith('192.168.') or ip.startswith('10.') or
-            ip.startswith('172.16.') or ip.startswith('127.') or
-            ip.startswith('172.17.') or ip.startswith('172.18.') or
-            ip.startswith('172.19.') or ip.startswith('172.2') or
-            ip.startswith('172.30.') or ip.startswith('172.31.'))
+    try:
+        import ipaddress
+        return ipaddress.ip_address(ip).is_private
+    except Exception:
+        return (ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('127.'))
 
 def fetch_provider_from_api(ip):
     if is_local_ip(ip):
@@ -267,10 +305,7 @@ def get_provider(ip):
                 (provider, now_iso(), ip)
             )
         else:
-            conn.execute(
-                "UPDATE devices SET provider = ? WHERE ip = ?",
-                (provider, ip)
-            )
+            conn.execute("UPDATE devices SET provider = ? WHERE ip = ?", (provider, ip))
     return provider
 
 def get_whois(ip):
@@ -301,16 +336,16 @@ _worker_stop = threading.Event()
 _worker_thread = None
 _last_state = {}
 _last_history_save = {}
+_last_high_latency_event = {}
 
 def ping_worker():
     log.info("Ping worker iniciado (ping=%ss, history=%ss)", PING_INTERVAL, HISTORY_INTERVAL)
     last_cleanup = 0
+    backoff = 0
     while not _worker_stop.is_set():
         try:
             with get_db() as conn:
-                devices = conn.execute(
-                    "SELECT ip, name, threshold, maintenance FROM devices"
-                ).fetchall()
+                devices = conn.execute("SELECT ip, name, threshold, maintenance FROM devices").fetchall()
 
             current_ips = {d['ip'] for d in devices}
             for ip in list(_last_state.keys()):
@@ -319,49 +354,80 @@ def ping_worker():
             for ip in list(_last_history_save.keys()):
                 if ip not in current_ips:
                     del _last_history_save[ip]
+            for ip in list(_last_high_latency_event.keys()):
+                if ip not in current_ips:
+                    del _last_high_latency_event[ip]
 
             now = time.time()
+
+            results = {}
+            if devices:
+                with ThreadPoolExecutor(max_workers=min(PING_MAX_WORKERS, len(devices))) as ex:
+                    futures = {ex.submit(ping_ip, d['ip']): d for d in devices}
+                    for fut in as_completed(futures):
+                        dev = futures[fut]
+                        try:
+                            results[dev['ip']] = fut.result()
+                        except Exception:
+                            results[dev['ip']] = None
+
+            updates = []
+            history_rows = []
+            state_changes = []
+
             for dev in devices:
                 ip = dev['ip']
-                latency = ping_ip(ip)
+                latency = results.get(ip)
                 alive = latency is not None
                 prev = _last_state.get(ip)
 
-                with get_db() as conn:
-                    conn.execute(
-                        "UPDATE devices SET alive = ?, last_latency = ?, last_check = ? WHERE ip = ?",
-                        (1 if alive else 0, latency, datetime.now().strftime('%H:%M:%S'), ip)
-                    )
+                updates.append((1 if alive else 0, latency, datetime.now().strftime('%H:%M:%S'), ip))
 
                 last_save = _last_history_save.get(ip, 0)
                 if (now - last_save) >= HISTORY_INTERVAL:
-                    with get_db() as conn:
-                        conn.execute(
-                            "INSERT INTO history (device_ip, timestamp, latency, alive) VALUES (?, ?, ?, ?)",
-                            (ip, now_iso(), latency, 1 if alive else 0)
-                        )
+                    history_rows.append((ip, now_iso(), latency, 1 if alive else 0))
                     _last_history_save[ip] = now
 
                 if prev is not None and prev != alive:
-                    if alive:
-                        save_event('UP', ip, dev['name'], latency, 'Dispositivo recuperado')
-                        log.info("🟢 %s (%s) recuperado", dev['name'], ip)
-                    else:
-                        save_event('DOWN', ip, dev['name'], None, 'Dispositivo caído')
-                        log.info("🔴 %s (%s) caído", dev['name'], ip)
-                    socketio.emit('device_update', {
-                        'ip': ip,
-                        'alive': alive,
-                        'last_latency': latency,
-                        'last_check': datetime.now().strftime('%H:%M:%S'),
-                    })
+                    state_changes.append((ip, dev['name'], alive, latency))
 
                 if alive and latency and latency > (dev['threshold'] or 100):
                     if not dev['maintenance']:
-                        save_event('HIGH_LATENCY', ip, dev['name'], latency,
-                                   f'Latencia {latency}ms > {dev["threshold"]}ms')
+                        last_evt = _last_high_latency_event.get(ip, 0)
+                        if (now - last_evt) >= HIGH_LATENCY_COOLDOWN:
+                            _last_high_latency_event[ip] = now
+                            save_event('HIGH_LATENCY', ip, dev['name'], latency,
+                                       f'Latencia {latency}ms > {dev["threshold"]}ms')
 
                 _last_state[ip] = alive
+
+            if updates or history_rows:
+                with get_db() as conn:
+                    conn.executemany(
+                        "UPDATE devices SET alive = ?, last_latency = ?, last_check = ? WHERE ip = ?",
+                        updates
+                    )
+                    if history_rows:
+                        conn.executemany(
+                            "INSERT INTO history (device_ip, timestamp, latency, alive) VALUES (?, ?, ?, ?)",
+                            history_rows
+                        )
+
+            for ip, name, alive, latency in state_changes:
+                if alive:
+                    save_event('UP', ip, name, latency, 'Dispositivo recuperado')
+                    log.info("🟢 %s (%s) recuperado", name, ip)
+                else:
+                    save_event('DOWN', ip, name, None, 'Dispositivo caído')
+                    log.info("🔴 %s (%s) caído", name, ip)
+                socketio.emit('device_update', {
+                    'ip': ip,
+                    'alive': alive,
+                    'last_latency': latency,
+                    'last_check': datetime.now().strftime('%H:%M:%S'),
+                })
+
+            backoff = 0
 
             if (now - last_cleanup) >= CLEANUP_INTERVAL:
                 cleanup_old_data()
@@ -369,6 +435,10 @@ def ping_worker():
 
         except Exception as e:
             log.exception("Error en ping_worker: %s", e)
+            backoff = min(backoff + 1, 6)
+            _worker_stop.wait(PING_INTERVAL * (2 ** backoff))
+            continue
+
         _worker_stop.wait(PING_INTERVAL)
     log.info("Ping worker detenido")
 
@@ -404,6 +474,9 @@ def start_worker():
 # ============================================================
 # AUTENTICACIÓN
 # ============================================================
+_login_attempts = {}
+_login_lock = threading.Lock()
+
 def login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -420,7 +493,24 @@ def login_required(f):
 def login():
     error = None
     if request.method == 'POST':
+        ip = request.remote_addr or 'unknown'
+        now = time.time()
+        with _login_lock:
+            attempts = [t for t in _login_attempts.get(ip, []) if now - t < 300]
+            _login_attempts[ip] = attempts
+            if len(attempts) >= 5:
+                return f'''<!DOCTYPE html><html><head><title>Bloqueado</title></head>
+                <body style="font-family:sans-serif;background:#0d1117;color:#e6edf3;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+                <div style="text-align:center;">
+                <h2 style="color:#f85149;">⛔ Demasiados intentos</h2>
+                <p>Espera 5 minutos antes de volver a intentar.</p>
+                </div></body></html>''', 429
+            attempts.append(now)
+            _login_attempts[ip] = attempts
+
         if request.form.get('password') == ADMIN_PASSWORD:
+            with _login_lock:
+                _login_attempts.pop(ip, None)
             session['authenticated'] = True
             return redirect(url_for('index'))
         error = 'Contraseña incorrecta'
@@ -469,10 +559,12 @@ def index():
 
 @app.route('/api/health', methods=['GET'])
 def api_health():
+    worker_alive = _worker_thread is not None and _worker_thread.is_alive()
     with get_db() as conn:
         row = conn.execute("SELECT COUNT(*) as n FROM devices").fetchone()
     return jsonify({
-        'status': 'ok',
+        'status': 'ok' if worker_alive else 'degraded',
+        'worker': worker_alive,
         'devices': row['n'],
         'time': now_iso(),
         'uptime_interval': PING_INTERVAL,
@@ -556,6 +648,108 @@ def api_update_device(ip):
 def api_ping_single(ip):
     latency = ping_ip(ip)
     return jsonify({'ip': ip, 'alive': latency is not None, 'latency': latency})
+
+@app.route('/api/ping/<ip>/force', methods=['POST'])
+@login_required
+def api_ping_force(ip):
+    if not valid_ip(ip):
+        return jsonify({'error': 'IP inválida'}), 400
+    with get_db() as conn:
+        dev = conn.execute("SELECT ip, name FROM devices WHERE ip = ?", (ip,)).fetchone()
+    if not dev:
+        return jsonify({'error': 'No existe'}), 404
+
+    latency = ping_ip(ip, timeout=3, retries=2)
+    alive = latency is not None
+
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE devices SET alive = ?, last_latency = ?, last_check = ? WHERE ip = ?",
+            (1 if alive else 0, latency, datetime.now().strftime('%H:%M:%S'), ip)
+        )
+        conn.execute(
+            "INSERT INTO history (device_ip, timestamp, latency, alive) VALUES (?, ?, ?, ?)",
+            (ip, now_iso(), latency, 1 if alive else 0)
+        )
+
+    _last_state[ip] = alive
+
+    socketio.emit('device_update', {
+        'ip': ip,
+        'alive': alive,
+        'last_latency': latency,
+        'last_check': datetime.now().strftime('%H:%M:%S'),
+        'forced': True
+    })
+
+    log_audit('PING_MANUAL', request.remote_addr,
+              f'{ip} → {latency}ms' if alive else f'{ip} → DOWN')
+    return jsonify({'ip': ip, 'alive': alive, 'latency': latency})
+
+# ---------- GROUPS ----------
+@app.route('/api/groups', methods=['GET'])
+@login_required
+def api_groups():
+    with get_db() as conn:
+        rows = conn.execute("SELECT id, name, color FROM groups ORDER BY name").fetchall()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/groups', methods=['POST'])
+@login_required
+def api_create_group():
+    data = request.get_json() or {}
+    gid = (data.get('id') or '').strip().lower().replace(' ', '_')
+    name = (data.get('name') or gid).strip()
+    color = data.get('color', '#58a6ff')
+    if not gid:
+        return jsonify({'error': 'ID requerido'}), 400
+    if not re.match(r'^[a-z0-9_]+$', gid):
+        return jsonify({'error': 'ID solo puede tener letras minúsculas, números y _'}), 400
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO groups (id, name, color) VALUES (?, ?, ?)",
+                (gid, name, color)
+            )
+        log_audit('CREAR_GRUPO', request.remote_addr, gid)
+        socketio.emit('groups_changed', {})
+        return jsonify({'id': gid, 'name': name, 'color': color}), 201
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Ya existe un grupo con ese ID'}), 400
+
+@app.route('/api/groups/<gid>', methods=['PUT'])
+@login_required
+def api_update_group(gid):
+    data = request.get_json() or {}
+    fields, values = [], []
+    for k in ['name', 'color']:
+        if k in data:
+            fields.append(f"{k} = ?")
+            values.append(data[k])
+    if not fields:
+        return jsonify({'error': 'Sin campos'}), 400
+    values.append(gid)
+    with get_db() as conn:
+        conn.execute(f"UPDATE groups SET {', '.join(fields)} WHERE id = ?", values)
+    log_audit('EDITAR_GRUPO', request.remote_addr, gid)
+    socketio.emit('groups_changed', {})
+    return jsonify({'message': 'Actualizado'})
+
+@app.route('/api/groups/<gid>', methods=['DELETE'])
+@login_required
+def api_delete_group(gid):
+    if gid == 'default':
+        return jsonify({'error': 'No se puede eliminar el grupo default'}), 400
+    with get_db() as conn:
+        # Mover devices al grupo default
+        moved = conn.execute(
+            "UPDATE devices SET group_name = 'default' WHERE group_name = ?", (gid,)
+        ).rowcount
+        conn.execute("DELETE FROM groups WHERE id = ?", (gid,))
+    log_audit('ELIMINAR_GRUPO', request.remote_addr, f'{gid} ({moved} devices movidos)')
+    socketio.emit('groups_changed', {})
+    socketio.emit('devices_changed', {})
+    return jsonify({'message': 'Eliminado', 'devices_moved': moved})
 
 # ---------- STATS ----------
 @app.route('/api/stats', methods=['GET'])
@@ -678,7 +872,7 @@ def api_history(ip):
                     AVG(alive) as alive_ratio
                 FROM history
                 WHERE device_ip = ? AND timestamp >= ?
-                GROUP BY CAST(strftime('%s', timestamp) AS INTEGER) / (? * 60)
+                GROUP BY CAST(strftime('%s', replace(timestamp, 'T', ' ')) AS INTEGER) / (? * 60)
                 ORDER BY timestamp ASC
             ''', (ip, cutoff, bucket_min)).fetchall()
             data = [{
@@ -863,7 +1057,7 @@ def _active_users_cached():
         ).fetchall()
     result = [dict(r) for r in rows]
     with _users_cache_lock:
-        _users_cache['ts'] = now
+        _users_cache['ts'] = time.time()
         _users_cache['data'] = result
     return result
 
@@ -914,9 +1108,14 @@ def handle_altair(data):
     query = (data.get('query') or '').strip()
     if not query:
         return
-    response = process_altair(query)
-    emit('altair_response', {'query': query, 'response': response})
-    log_audit('ALTAIR_QUERY', request.remote_addr, query[:80])
+    response, used_llm = process_altair(query)
+    emit('altair_response', {
+        'query': query,
+        'response': response,
+        'used_llm': used_llm
+    })
+    log_audit('ALTAIR_QUERY', request.remote_addr,
+              f"{'LLM' if used_llm else 'regex'}: {query[:80]}")
 
 def _active_users():
     return _active_users_cached()
@@ -924,12 +1123,124 @@ def _active_users():
 # ============================================================
 # ALTAIR
 # ============================================================
+def _check_ollama():
+    try:
+        r = requests.get(f'{OLLAMA_URL}/api/tags', timeout=2)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+def _needs_llm(query):
+    q = query.lower()
+    complex_keywords = [
+        'ayer', 'semana', 'mes', 'tendencia', 'compar', 'mejor', 'peor',
+        'por qué', 'porque', 'causa', 'analiz', 'recomiend', 'suger',
+        'histórico', 'historico', 'promedio', 'estadístic', 'estadistic',
+        'resumen', 'reporte', 'informe', 'cómo estuvo', 'como estuvo',
+        'qué pasó', 'que paso', 'explica', 'diferencia'
+    ]
+    return any(k in q for k in complex_keywords)
+
+def _build_altair_context():
+    with get_db() as conn:
+        stats = conn.execute('''
+            SELECT COUNT(*) as total, SUM(alive) as online,
+                   AVG(CASE WHEN alive=1 THEN last_latency END) as avg_lat
+            FROM devices
+        ''').fetchone()
+        downs = conn.execute(
+            "SELECT name, ip, provider FROM devices WHERE alive = 0 LIMIT 20"
+        ).fetchall()
+        events = conn.execute('''
+            SELECT timestamp, device_name, event_type, details
+            FROM events ORDER BY timestamp DESC LIMIT 15
+        ''').fetchall()
+        by_provider = conn.execute('''
+            SELECT provider, COUNT(*) as n, SUM(alive) as up
+            FROM devices GROUP BY provider
+        ''').fetchall()
+
+    return {
+        'total': stats['total'] or 0,
+        'online': stats['online'] or 0,
+        'offline': (stats['total'] or 0) - (stats['online'] or 0),
+        'avg_latency': round(stats['avg_lat'], 1) if stats['avg_lat'] else None,
+        'down_devices': [dict(d) for d in downs],
+        'recent_events': [
+            f"{e['timestamp'][11:16]} {e['event_type']} {e['device_name'] or ''} {e['details'] or ''}".strip()
+            for e in events
+        ],
+        'providers': [dict(p) for p in by_provider],
+        'timestamp': now_iso()
+    }
+
+def _ask_ollama(query, context):
+    system = """Eres Altair, un asistente experto en monitoreo de red.
+Respondes en español, de forma concisa y técnica.
+Tienes acceso a datos en vivo del sistema de monitoreo.
+Usa SOLO los datos del contexto. Si no sabes algo, dilo.
+Formatea con emojis cuando aporte claridad (📊 ✅ ⚠️ 🔴 🟢).
+Nunca inventes IPs, hosts o métricas que no estén en el contexto."""
+
+    ctx_text = f"""Estado actual del sistema ({context['timestamp']}):
+
+RESUMEN:
+- Total hosts: {context['total']}
+- En línea: {context['online']}
+- Caídos: {context['offline']}
+- Latencia promedio: {context['avg_latency']}ms
+
+HOSTS CAÍDOS ({len(context['down_devices'])}):
+{chr(10).join(f"  • {d['name']} ({d['ip']}) - {d['provider']}" for d in context['down_devices']) or "  (ninguno)"}
+
+POR PROVEEDOR:
+{chr(10).join(f"  • {p['provider']}: {p['up']}/{p['n']} en línea" for p in context['providers']) or "  (sin datos)"}
+
+ÚLTIMOS EVENTOS:
+{chr(10).join(f"  • {e}" for e in context['recent_events']) or "  (sin eventos)"}
+
+PREGUNTA DEL USUARIO: {query}"""
+
+    try:
+        r = requests.post(
+            f'{OLLAMA_URL}/api/generate',
+            json={
+                'model': OLLAMA_MODEL,
+                'prompt': ctx_text,
+                'system': system,
+                'stream': False,
+                'options': {'temperature': 0.3, 'num_predict': 400, 'top_p': 0.9}
+            },
+            timeout=60
+        )
+        if r.status_code == 200:
+            return r.json().get('response', '').strip()
+    except Exception as e:
+        log.warning("Ollama error: %s", e)
+    return None
+
 def process_altair(query):
+    q = query.lower().strip()
+    if not q:
+        return "Dime qué necesitas.", False
+
+    use_llm = ALTAIR_USE_LLM == 'always'
+    if ALTAIR_USE_LLM == 'auto' and _needs_llm(q):
+        use_llm = True
+
+    if use_llm and _check_ollama():
+        ctx = _build_altair_context()
+        response = _ask_ollama(query, ctx)
+        if response:
+            return response, True
+
+    return _process_altair_regex(query), False
+
+def _process_altair_regex(query):
     q = query.lower()
     with get_db() as conn:
         stats = conn.execute('''
-            SELECT COUNT(*) as total, SUM(alive) as online
-            FROM devices
+            SELECT COUNT(*) as total, SUM(alive) as online FROM devices
         ''').fetchone()
         total = stats['total'] or 0
         online = stats['online'] or 0
@@ -944,9 +1255,7 @@ def process_altair(query):
 
     if 'caído' in q or 'caida' in q or 'problema' in q:
         with get_db() as conn:
-            downs = conn.execute(
-                "SELECT name, ip FROM devices WHERE alive = 0"
-            ).fetchall()
+            downs = conn.execute("SELECT name, ip FROM devices WHERE alive = 0").fetchall()
         if not downs:
             return "✅ No hay dispositivos caídos."
         return "⚠️ Caídos: " + ", ".join(f"{d['name']} ({d['ip']})" for d in downs)
@@ -964,8 +1273,7 @@ def process_altair(query):
     if 'incidente' in q or 'evento' in q:
         with get_db() as conn:
             events = conn.execute(
-                "SELECT timestamp, device_name, event_type FROM events "
-                "ORDER BY timestamp DESC LIMIT 10"
+                "SELECT timestamp, device_name, event_type FROM events ORDER BY timestamp DESC LIMIT 10"
             ).fetchall()
         if not events:
             return "Sin eventos recientes."
@@ -977,9 +1285,7 @@ def process_altair(query):
         if m:
             ip = m.group()
             with get_db() as conn:
-                row = conn.execute(
-                    "SELECT provider FROM devices WHERE ip = ?", (ip,)
-                ).fetchone()
+                row = conn.execute("SELECT provider FROM devices WHERE ip = ?", (ip,)).fetchone()
             if row:
                 return f"🌐 {ip} → {row['provider']}"
             return f"No tengo {ip} en la BD."
@@ -994,23 +1300,38 @@ def process_altair(query):
             return "No se pudo obtener."
         return "Ej: 'whois de 8.8.8.8'"
 
+    if 'grupo' in q:
+        with get_db() as conn:
+            rows = conn.execute('''
+                SELECT g.name, g.color, COUNT(d.ip) as n
+                FROM groups g LEFT JOIN devices d ON d.group_name = g.id
+                GROUP BY g.id ORDER BY g.name
+            ''').fetchall()
+        if not rows:
+            return "No hay grupos definidos."
+        lines = [f"• {r['name']}: {r['n']} dispositivos" for r in rows]
+        return "📁 Grupos:\n" + "\n".join(lines)
+
     if 'ayuda' in q or 'help' in q or 'comandos' in q:
         return ("📋 Comandos:\n"
                 "• estado de la red\n"
                 "• dispositivos caídos\n"
                 "• latencia\n"
                 "• incidentes\n"
+                "• grupos\n"
                 "• proveedor de [IP]\n"
-                "• whois de [IP]")
+                "• whois de [IP]\n"
+                "• Preguntas complejas (con LLM): '¿cómo estuvo la red ayer?'")
 
     return f"No entendí: '{query}'. Escribe 'ayuda'."
 
 # ============================================================
 # ARRANQUE
 # ============================================================
+init_db()
+start_worker()
+
 if __name__ == '__main__':
-    init_db()
-    start_worker()
     local_ip = '127.0.0.1'
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1027,9 +1348,10 @@ if __name__ == '__main__':
     print(f"Local:      http://127.0.0.1:5001")
     print(f"Red:        http://{local_ip}:5001")
     print(f"Password:   {'(sin auth)' if not ADMIN_PASSWORD else '(configurado)'}")
-    print(f"Ping:       cada {PING_INTERVAL}s")
+    print(f"Ping:       cada {PING_INTERVAL}s ({PING_MAX_WORKERS} workers)")
     print(f"Historial:  cada {HISTORY_INTERVAL}s ({HISTORY_RETENTION_DAYS} días)")
     print(f"Eventos:    {EVENTS_RETENTION_DAYS} días")
     print(f"Auditoría:  {AUDIT_RETENTION_DAYS} días")
+    print(f"Altair LLM: {ALTAIR_USE_LLM} ({OLLAMA_MODEL} @ {OLLAMA_URL})")
     print("=" * 60)
-    socketio.run(app, debug=False, host='0.0.0.0', port=5001)
+    socketio.run(app, debug=False, host='0.0.0.0', port=5001, allow_unsafe_werkzeug=True)
